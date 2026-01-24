@@ -1,0 +1,15 @@
+version: '3.8'
+services:
+  sanctions_db:
+    image: postgres:15-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: sg_admin
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: sanctions_guard_dev
+    ports:
+      - "5435:5432"
+    volumes:
+      - sg_postgres_data:/var/lib/postgresql/data
+volumes:
+  sg_postgres_data:
