@@ -8,10 +8,12 @@ generator client {
   provider = "prisma-client-js"
   output   = "../src/generated/prisma"
   moduleFormat = "cjs"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
   provider = "postgresql"
+  extensions = [pg_trgm]
 }
 
 model User {
@@ -28,10 +30,12 @@ model SanctionList {
   reason      String?   @db.Text
   country     String?
   type        String?
-  extarnalId  String?   @unique
+  externalId  String?   @unique
   createdAt   DateTime  @default(now())
 
   logs        AuditLog[]
+
+  @@index([fullName(ops: raw("gin_trgm_ops"))], type: Gin)
 }
 
 model AuditLog {
