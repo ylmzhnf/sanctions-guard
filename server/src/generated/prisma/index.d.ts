@@ -2210,7 +2210,7 @@ export namespace Prisma {
     reason: string | null
     country: string | null
     type: string | null
-    extarnalId: string | null
+    externalId: string | null
     createdAt: Date | null
   }
 
@@ -2221,7 +2221,7 @@ export namespace Prisma {
     reason: string | null
     country: string | null
     type: string | null
-    extarnalId: string | null
+    externalId: string | null
     createdAt: Date | null
   }
 
@@ -2232,7 +2232,7 @@ export namespace Prisma {
     reason: number
     country: number
     type: number
-    extarnalId: number
+    externalId: number
     createdAt: number
     _all: number
   }
@@ -2253,7 +2253,7 @@ export namespace Prisma {
     reason?: true
     country?: true
     type?: true
-    extarnalId?: true
+    externalId?: true
     createdAt?: true
   }
 
@@ -2264,7 +2264,7 @@ export namespace Prisma {
     reason?: true
     country?: true
     type?: true
-    extarnalId?: true
+    externalId?: true
     createdAt?: true
   }
 
@@ -2275,7 +2275,7 @@ export namespace Prisma {
     reason?: true
     country?: true
     type?: true
-    extarnalId?: true
+    externalId?: true
     createdAt?: true
     _all?: true
   }
@@ -2373,7 +2373,7 @@ export namespace Prisma {
     reason: string | null
     country: string | null
     type: string | null
-    extarnalId: string | null
+    externalId: string | null
     createdAt: Date
     _count: SanctionListCountAggregateOutputType | null
     _avg: SanctionListAvgAggregateOutputType | null
@@ -2403,7 +2403,7 @@ export namespace Prisma {
     reason?: boolean
     country?: boolean
     type?: boolean
-    extarnalId?: boolean
+    externalId?: boolean
     createdAt?: boolean
     logs?: boolean | SanctionList$logsArgs<ExtArgs>
     _count?: boolean | SanctionListCountOutputTypeDefaultArgs<ExtArgs>
@@ -2416,7 +2416,7 @@ export namespace Prisma {
     reason?: boolean
     country?: boolean
     type?: boolean
-    extarnalId?: boolean
+    externalId?: boolean
     createdAt?: boolean
   }, ExtArgs["result"]["sanctionList"]>
 
@@ -2427,7 +2427,7 @@ export namespace Prisma {
     reason?: boolean
     country?: boolean
     type?: boolean
-    extarnalId?: boolean
+    externalId?: boolean
     createdAt?: boolean
   }, ExtArgs["result"]["sanctionList"]>
 
@@ -2438,11 +2438,11 @@ export namespace Prisma {
     reason?: boolean
     country?: boolean
     type?: boolean
-    extarnalId?: boolean
+    externalId?: boolean
     createdAt?: boolean
   }
 
-  export type SanctionListOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "fullName" | "source" | "reason" | "country" | "type" | "extarnalId" | "createdAt", ExtArgs["result"]["sanctionList"]>
+  export type SanctionListOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "fullName" | "source" | "reason" | "country" | "type" | "externalId" | "createdAt", ExtArgs["result"]["sanctionList"]>
   export type SanctionListInclude<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
     logs?: boolean | SanctionList$logsArgs<ExtArgs>
     _count?: boolean | SanctionListCountOutputTypeDefaultArgs<ExtArgs>
@@ -2462,7 +2462,7 @@ export namespace Prisma {
       reason: string | null
       country: string | null
       type: string | null
-      extarnalId: string | null
+      externalId: string | null
       createdAt: Date
     }, ExtArgs["result"]["sanctionList"]>
     composites: {}
@@ -2894,7 +2894,7 @@ export namespace Prisma {
     readonly reason: FieldRef<"SanctionList", 'String'>
     readonly country: FieldRef<"SanctionList", 'String'>
     readonly type: FieldRef<"SanctionList", 'String'>
-    readonly extarnalId: FieldRef<"SanctionList", 'String'>
+    readonly externalId: FieldRef<"SanctionList", 'String'>
     readonly createdAt: FieldRef<"SanctionList", 'DateTime'>
   }
     
@@ -4513,7 +4513,7 @@ export namespace Prisma {
     reason: 'reason',
     country: 'country',
     type: 'type',
-    extarnalId: 'extarnalId',
+    externalId: 'externalId',
     createdAt: 'createdAt'
   };
 
@@ -4678,7 +4678,7 @@ export namespace Prisma {
     reason?: StringNullableFilter<"SanctionList"> | string | null
     country?: StringNullableFilter<"SanctionList"> | string | null
     type?: StringNullableFilter<"SanctionList"> | string | null
-    extarnalId?: StringNullableFilter<"SanctionList"> | string | null
+    externalId?: StringNullableFilter<"SanctionList"> | string | null
     createdAt?: DateTimeFilter<"SanctionList"> | Date | string
     logs?: AuditLogListRelationFilter
   }
@@ -4690,14 +4690,14 @@ export namespace Prisma {
     reason?: SortOrderInput | SortOrder
     country?: SortOrderInput | SortOrder
     type?: SortOrderInput | SortOrder
-    extarnalId?: SortOrderInput | SortOrder
+    externalId?: SortOrderInput | SortOrder
     createdAt?: SortOrder
     logs?: AuditLogOrderByRelationAggregateInput
   }
 
   export type SanctionListWhereUniqueInput = Prisma.AtLeast<{
     id?: number
-    extarnalId?: string
+    externalId?: string
     AND?: SanctionListWhereInput | SanctionListWhereInput[]
     OR?: SanctionListWhereInput[]
     NOT?: SanctionListWhereInput | SanctionListWhereInput[]
@@ -4708,7 +4708,7 @@ export namespace Prisma {
     type?: StringNullableFilter<"SanctionList"> | string | null
     createdAt?: DateTimeFilter<"SanctionList"> | Date | string
     logs?: AuditLogListRelationFilter
-  }, "id" | "extarnalId">
+  }, "id" | "externalId">
 
   export type SanctionListOrderByWithAggregationInput = {
     id?: SortOrder
@@ -4717,7 +4717,7 @@ export namespace Prisma {
     reason?: SortOrderInput | SortOrder
     country?: SortOrderInput | SortOrder
     type?: SortOrderInput | SortOrder
-    extarnalId?: SortOrderInput | SortOrder
+    externalId?: SortOrderInput | SortOrder
     createdAt?: SortOrder
     _count?: SanctionListCountOrderByAggregateInput
     _avg?: SanctionListAvgOrderByAggregateInput
@@ -4736,7 +4736,7 @@ export namespace Prisma {
     reason?: StringNullableWithAggregatesFilter<"SanctionList"> | string | null
     country?: StringNullableWithAggregatesFilter<"SanctionList"> | string | null
     type?: StringNullableWithAggregatesFilter<"SanctionList"> | string | null
-    extarnalId?: StringNullableWithAggregatesFilter<"SanctionList"> | string | null
+    externalId?: StringNullableWithAggregatesFilter<"SanctionList"> | string | null
     createdAt?: DateTimeWithAggregatesFilter<"SanctionList"> | Date | string
   }
 
@@ -4859,7 +4859,7 @@ export namespace Prisma {
     reason?: string | null
     country?: string | null
     type?: string | null
-    extarnalId?: string | null
+    externalId?: string | null
     createdAt?: Date | string
     logs?: AuditLogCreateNestedManyWithoutSanctionInput
   }
@@ -4871,7 +4871,7 @@ export namespace Prisma {
     reason?: string | null
     country?: string | null
     type?: string | null
-    extarnalId?: string | null
+    externalId?: string | null
     createdAt?: Date | string
     logs?: AuditLogUncheckedCreateNestedManyWithoutSanctionInput
   }
@@ -4882,7 +4882,7 @@ export namespace Prisma {
     reason?: NullableStringFieldUpdateOperationsInput | string | null
     country?: NullableStringFieldUpdateOperationsInput | string | null
     type?: NullableStringFieldUpdateOperationsInput | string | null
-    extarnalId?: NullableStringFieldUpdateOperationsInput | string | null
+    externalId?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     logs?: AuditLogUpdateManyWithoutSanctionNestedInput
   }
@@ -4894,7 +4894,7 @@ export namespace Prisma {
     reason?: NullableStringFieldUpdateOperationsInput | string | null
     country?: NullableStringFieldUpdateOperationsInput | string | null
     type?: NullableStringFieldUpdateOperationsInput | string | null
-    extarnalId?: NullableStringFieldUpdateOperationsInput | string | null
+    externalId?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     logs?: AuditLogUncheckedUpdateManyWithoutSanctionNestedInput
   }
@@ -4906,7 +4906,7 @@ export namespace Prisma {
     reason?: string | null
     country?: string | null
     type?: string | null
-    extarnalId?: string | null
+    externalId?: string | null
     createdAt?: Date | string
   }
 
@@ -4916,7 +4916,7 @@ export namespace Prisma {
     reason?: NullableStringFieldUpdateOperationsInput | string | null
     country?: NullableStringFieldUpdateOperationsInput | string | null
     type?: NullableStringFieldUpdateOperationsInput | string | null
-    extarnalId?: NullableStringFieldUpdateOperationsInput | string | null
+    externalId?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
 
@@ -4927,7 +4927,7 @@ export namespace Prisma {
     reason?: NullableStringFieldUpdateOperationsInput | string | null
     country?: NullableStringFieldUpdateOperationsInput | string | null
     type?: NullableStringFieldUpdateOperationsInput | string | null
-    extarnalId?: NullableStringFieldUpdateOperationsInput | string | null
+    externalId?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
 
@@ -5130,7 +5130,7 @@ export namespace Prisma {
     reason?: SortOrder
     country?: SortOrder
     type?: SortOrder
-    extarnalId?: SortOrder
+    externalId?: SortOrder
     createdAt?: SortOrder
   }
 
@@ -5145,7 +5145,7 @@ export namespace Prisma {
     reason?: SortOrder
     country?: SortOrder
     type?: SortOrder
-    extarnalId?: SortOrder
+    externalId?: SortOrder
     createdAt?: SortOrder
   }
 
@@ -5156,7 +5156,7 @@ export namespace Prisma {
     reason?: SortOrder
     country?: SortOrder
     type?: SortOrder
-    extarnalId?: SortOrder
+    externalId?: SortOrder
     createdAt?: SortOrder
   }
 
@@ -5754,7 +5754,7 @@ export namespace Prisma {
     reason?: string | null
     country?: string | null
     type?: string | null
-    extarnalId?: string | null
+    externalId?: string | null
     createdAt?: Date | string
   }
 
@@ -5765,7 +5765,7 @@ export namespace Prisma {
     reason?: string | null
     country?: string | null
     type?: string | null
-    extarnalId?: string | null
+    externalId?: string | null
     createdAt?: Date | string
   }
 
@@ -5813,7 +5813,7 @@ export namespace Prisma {
     reason?: NullableStringFieldUpdateOperationsInput | string | null
     country?: NullableStringFieldUpdateOperationsInput | string | null
     type?: NullableStringFieldUpdateOperationsInput | string | null
-    extarnalId?: NullableStringFieldUpdateOperationsInput | string | null
+    externalId?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
 
@@ -5824,7 +5824,7 @@ export namespace Prisma {
     reason?: NullableStringFieldUpdateOperationsInput | string | null
     country?: NullableStringFieldUpdateOperationsInput | string | null
     type?: NullableStringFieldUpdateOperationsInput | string | null
-    extarnalId?: NullableStringFieldUpdateOperationsInput | string | null
+    externalId?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
 

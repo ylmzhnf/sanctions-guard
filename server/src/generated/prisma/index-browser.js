@@ -133,7 +133,7 @@ exports.Prisma.SanctionListScalarFieldEnum = {
   reason: 'reason',
   country: 'country',
   type: 'type',
-  extarnalId: 'extarnalId',
+  externalId: 'externalId',
   createdAt: 'createdAt'
 };
 
