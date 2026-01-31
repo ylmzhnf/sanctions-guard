@@ -14,4 +14,7 @@ describe('ScreeningService', () => {
     service = moduleRef.get(ScreeningService);
     prisma = moduleRef.get(PrismaService);
   });
+  afterAll(async () => {
+    await prisma.$disconnect();
+  })
 });

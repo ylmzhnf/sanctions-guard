@@ -17,7 +17,11 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "jest --config ./test/jest-e2e.json"
+    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "db:seed:test": "dotenv -e .env.test -- npx prisma db seed",
+    "test:init": "dotenv -e .env.test -- npx prisma migrate deploy && npm run db:seed:test && dotenv -e .env.test -- jest",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
@@ -72,5 +76,8 @@
     ],
     "coverageDirectory": "../coverage",
     "testEnvironment": "node"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.test.ts"
   }
 }

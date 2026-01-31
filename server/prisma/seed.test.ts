@@ -2,8 +2,11 @@ import { PrismaClient } from '../src/generated/prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
 
+if (!process.env.DATABASE_TEST_URL) {
+  throw new Error('DATABASE_TEST_URL is not defined');
+}
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+  connectionString: process.env.DATABASE_TEST_URL,
 });
 
 const adapter = new PrismaPg(pool);
