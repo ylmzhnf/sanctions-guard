@@ -54,9 +54,9 @@ export class ScreeningService {
     const result = await this.prisma.$queryRaw<
       { id: number; fullName: string; score: number }[]
     >`
-    SELECT id, fullName, similarity(fullName, ${queryName}) AS score
+    SELECT id, "fullName", similarity("fullName", ${queryName}) AS score
     FROM "SanctionList" 
-    WHERE fullName % ${queryName} AND similarity (fullName, ${queryName}) > 0.3
+    WHERE "fullName" % ${queryName} AND similarity ("fullName", ${queryName}) > 0.3
     ORDER BY score DESC 
     LIMIT 10;`;
     const bestMatch = result.length > 0 ? result[0] : null;

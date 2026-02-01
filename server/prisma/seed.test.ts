@@ -2,17 +2,20 @@ import { PrismaClient } from '../src/generated/prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
 
-if (!process.env.DATABASE_TEST_URL) {
-  throw new Error('DATABASE_TEST_URL is not defined');
-}
+console.log('Seed.test running');
+
 const pool = new Pool({
-  connectionString: process.env.DATABASE_TEST_URL,
+  connectionString: process.env.DATABASE_URL,
 });
 
 const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
+if (!process.env.DATABASE_URL) {
+  throw new Error('DATABASE_TEST_URL is not defined');
+}
 async function main() {
+  await prisma.sanctionList.deleteMany();
   await prisma.sanctionList.createMany({
     data: [
       {
