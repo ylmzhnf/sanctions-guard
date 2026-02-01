@@ -13,7 +13,7 @@ describe('ScreeningService', () => {
     const moduleRef: TestingModule = await Test.createTestingModule({
       providers: [ScreeningService, PrismaService],
     }).compile();
-
+    await moduleRef.init();
     service = moduleRef.get(ScreeningService);
     prisma = moduleRef.get(PrismaService);
 
@@ -67,22 +67,11 @@ describe('ScreeningService', () => {
     expect(log.similarityScore).toBeGreaterThan(0.8);
     expect(log.sanctionId).toBe(sanctionId);
 
-    try {
-      await prisma.auditLog.update({
+    await expect(
+      prisma.auditLog.update({
         where: { id: log.id },
-        data: { matchedName: 'Changed Name' },
-      });
-      throw new Error('Audit log should be immutable and not allow updates.');
-    } catch (error) {
-      if (error instanceof Error) {
-        if (
-          error.message ===
-          'Audit log should be immutable and not allow updates.'
-        ) {
-          throw error;
-        }
-        expect(error).toBeDefined();
-      }
-    }
+        data: { queriedName: 'Changed Name' },
+      }),
+    ).rejects.toThrow('Audit log should be immutable and not allow updates.');
   });
 });
