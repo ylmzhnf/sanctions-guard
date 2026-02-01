@@ -29,7 +29,10 @@
     "@nestjs/platform-express": "^11.0.1",
     "@prisma/adapter-pg": "^7.3.0",
     "@prisma/client": "^7.3.0",
-    "pg": "^8.17.2",
+    "@types/pg": "^8.16.0",
+    "install": "^0.13.0",
+    "npm": "^11.8.0",
+    "pg": "^8.18.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1"
   },
@@ -67,7 +70,10 @@
       "ts"
     ],
     "rootDir": ".",
-    "roots": ["<rootDir>/src", "<rootDir>/test"],
+    "roots": [
+      "<rootDir>/src",
+      "<rootDir>/test"
+    ],
     "testRegex": ".*\\.spec\\.ts$",
     "transform": {
       "^.+\\.(t|j)s$": "ts-jest"
