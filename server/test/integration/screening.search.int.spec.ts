@@ -52,7 +52,7 @@ describe('ScreeningService', () => {
     const bestMatch = result[0];
 
     expect(bestMatch.fullName).toBe('Vladimir Putin');
-    expect(bestMatch.score).toBeGreaterThan(0.6);
+    expect(bestMatch.score).toBeGreaterThan(0.8);
 
     const logs = await prisma.auditLog.findMany({
       where: { userId },
@@ -64,7 +64,7 @@ describe('ScreeningService', () => {
     expect(log).toBeDefined();
     expect(log.queriedName).toBe('Vladimir Puten');
     expect(log.matchedName).toBe('Vladimir Putin');
-    expect(log.similarityScore).toBeGreaterThan(0.6);
+    expect(log.similarityScore).toBeGreaterThan(0.8);
     expect(log.sanctionId).toBe(sanctionId);
 
     try {

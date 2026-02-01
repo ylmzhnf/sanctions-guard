@@ -44,7 +44,7 @@ export class ScreeningService {
         }
       }
     }
-    // 5. Mesafe değerini yüzdeye cevirme 📈
+    // 5. Mesafe değerini yüzdeye cevirme
     const distance = matrix[s1.length][s2.length];
     const maxLength = Math.max(s1.length, s2.length);
     return 100 - (distance * 100) / maxLength;
@@ -58,8 +58,24 @@ export class ScreeningService {
     FROM "SanctionList" 
     WHERE "fullName" % ${queryName} AND similarity ("fullName", ${queryName}) > 0.3
     ORDER BY score DESC 
-    LIMIT 10;`;
-    const bestMatch = result.length > 0 ? result[0] : null;
+    LIMIT 50;`;
+
+    const refineResults = result.map((item) => {
+      const levenshteinScore = this.calculateSimilarity(
+        queryName,
+        item.fullName,
+      );
+      return {
+        ...item,
+        score: levenshteinScore / 100,
+        levenshteinScore: levenshteinScore,
+      };
+    });
+
+    refineResults.sort((a, b) => b.score - a.score);
+
+    const bestMatch = refineResults.length > 0 ? refineResults[0] : null;
+
     await this.prisma.auditLog.create({
       data: {
         queriedName: queryName,
@@ -69,6 +85,6 @@ export class ScreeningService {
         sanctionId: bestMatch?.id || null,
       },
     });
-    return result;
+    return refineResults;
   }
 }
