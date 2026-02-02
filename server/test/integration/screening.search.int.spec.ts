@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { PrismaService } from '../../src/prisma/prisma.service';
 import { ScreeningService } from '../../src/screening/screening.service';
+import { ConfigModule } from '@nestjs/config';
 
 describe('ScreeningService', () => {
   let service: ScreeningService;
@@ -11,6 +12,9 @@ describe('ScreeningService', () => {
 
   beforeAll(async () => {
     const moduleRef: TestingModule = await Test.createTestingModule({
+      imports: [
+        ConfigModule.forRoot({ isGlobal: true, envFilePath: '.env.test' }),
+      ],
       providers: [ScreeningService, PrismaService],
     }).compile();
     await moduleRef.init();
