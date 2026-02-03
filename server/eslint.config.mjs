@@ -33,7 +33,7 @@ export default tseslint.config(
     },
   },
    {
-    files: ['prisma/seed.ts'],
+    files: ['prisma/seed.ts', 'prisma/seed.test.ts'],
     rules: {
       '@typescript-eslint/no-unsafe-assignment': 'off',
       '@typescript-eslint/no-unsafe-call': 'off',
