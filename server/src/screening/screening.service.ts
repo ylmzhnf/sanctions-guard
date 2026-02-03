@@ -1,6 +1,17 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
+interface RawSanctionResult {
+  id: number;
+  fullName: string;
+  score: number;
+  source: string;
+  reason: string;
+  country: string;
+  createdAt: Date;
+}
+type RiskLevel = 'Low' | 'Medium' | 'High' | 'Exact Match';
+
 @Injectable()
 export class ScreeningService {
   constructor(private prisma: PrismaService) {}
@@ -49,12 +60,24 @@ export class ScreeningService {
     const maxLength = Math.max(s1.length, s2.length);
     return 100 - (distance * 100) / maxLength;
   }
+  determineRiskLevel(score: number): RiskLevel {
+    if (score >= 95) return 'Exact Match';
+    if (score >= 85) return 'High';
+    if (score >= 70) return 'Medium';
+    return 'Low';
+  }
+
   //pg_trigam
   async searchSanctionedNames(queryName: string, userId: number) {
-    const result = await this.prisma.$queryRaw<
-      { id: number; fullName: string; score: number }[]
-    >`
-    SELECT id, "fullName", similarity("fullName", ${queryName}) AS score
+    const result = await this.prisma.$queryRaw<RawSanctionResult[]>`
+    SELECT 
+    id, 
+    "fullName", 
+    "source",     
+    "reason",     
+    "country", 
+    "createdAt", 
+    similarity("fullName", ${queryName}) AS score
     FROM "SanctionList" 
     WHERE "fullName" % ${queryName} AND similarity ("fullName", ${queryName}) > 0.3
     ORDER BY score DESC 
@@ -67,7 +90,8 @@ export class ScreeningService {
       );
       return {
         ...item,
-        score: levenshteinScore / 100,
+        score: levenshteinScore,
+        riskLevel: this.determineRiskLevel(levenshteinScore),
         levenshteinScore: levenshteinScore,
       };
     });
