@@ -11,8 +11,15 @@ export class ScreeningController {
       query.queryName,
       query.userId,
     );
-    console.log('Screening search result:', result);
 
+    if (!result || result.length === 0) {
+      return {
+        success: true,
+        count: 0,
+        message: 'No match found',
+        data: [],
+      };
+    }
     const formattedResult = result.map((item) => ({
       ...item,
       score: Number(item.score.toFixed(2)),
