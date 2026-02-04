@@ -1,7 +1,9 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { SearchSanctionDto } from './dto/search-sanction.dto';
 import { ScreeningService } from './screening.service';
+import { JwtGuard } from 'src/auth/guard/jwt.guard';
 
+@UseGuards(JwtGuard)
 @Controller('screening')
 export class ScreeningController {
   constructor(private readonly screeningService: ScreeningService) {}
