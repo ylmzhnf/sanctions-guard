@@ -7,7 +7,7 @@ import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthDto } from './dto/authdto.dto';
-import { Prisma } from '@prisma/client';
+import { Prisma, Role } from '../../generated/prisma/client';
 import { ConfigService } from '@nestjs/config';
 
 @Injectable()
@@ -28,14 +28,10 @@ export class AuthService {
         data: {
           email: dto.email,
           password: hashPassword,
-          role: 'USER',
+          role: Role.USER,
         },
       });
-      return this.generateToken(
-        user.id,
-        user.email,
-        user.role as 'USER' | 'ADMIN',
-      );
+      return this.generateToken(user.id, user.email, user.role as Role);
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError) {
         if (error.code === 'P2002') {
@@ -59,17 +55,13 @@ export class AuthService {
     if (!isPasswordValid) {
       throw new UnauthorizedException('Wrong password');
     }
-    return this.generateToken(
-      user.id,
-      user.email,
-      user.role as 'USER' | 'ADMIN',
-    );
+    return this.generateToken(user.id, user.email, user.role as Role);
   }
 
   async generateToken(
     userId: number,
     email: string,
-    role: string,
+    role: Role,
   ): Promise<{ access_token: string }> {
     const payload = { sub: userId, email, role };
     const token = await this.jwtService.signAsync(payload);
