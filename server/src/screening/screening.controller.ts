@@ -1,11 +1,19 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Query,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
 import { SearchSanctionDto } from './dto/search-sanction.dto';
 import { ScreeningService } from './screening.service';
 import { JwtGuard } from 'src/auth/guard/jwt.guard';
 import { GetUser } from 'src/auth/decorator/get-user.decorator';
-import type { User } from '../../generated/prisma/client';
+import type { User } from '@prisma/client';
+import { AuditInterceptor } from 'src/common/interceptors/audit.interceptor';
 
 @UseGuards(JwtGuard)
+@UseInterceptors(AuditInterceptor)
 @Controller('screening')
 export class ScreeningController {
   constructor(private readonly screeningService: ScreeningService) {}
