@@ -23,4 +23,17 @@ export class AuditService {
       },
     });
   }
+
+  async getAuditLogs() {
+    return this.prisma.auditLog.findMany({
+      orderBy: { timestamp: 'desc' },
+      include: {
+        user: {
+          select: {
+            email: true,
+          },
+        },
+      },
+    });
+  }
 }

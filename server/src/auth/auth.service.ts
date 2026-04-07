@@ -18,7 +18,6 @@ export class AuthService {
     private configService: ConfigService,
   ) {}
 
-  //kullanici kaydi
   async register(dto: AuthDto) {
     const salt = await bcrypt.genSalt();
     const hashPassword = await bcrypt.hash(dto.password, salt);
@@ -43,14 +42,13 @@ export class AuthService {
   }
 
   async login(dto: AuthDto) {
-    //kullanici var mi
     const user = await this.prisma.user.findUnique({
       where: { email: dto.email },
     });
     if (!user) {
       throw new UnauthorizedException('Invalid email or password');
     }
-    //sifre dogrulama
+
     const isPasswordValid = await bcrypt.compare(dto.password, user.password);
     if (!isPasswordValid) {
       throw new UnauthorizedException('Wrong password');

@@ -2,8 +2,6 @@ import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
 
-console.log('Seed.test running');
-
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
 });
@@ -60,7 +58,6 @@ async function main() {
 
 main()
   .catch((e) => {
-    console.error('Send Error ', e);
     process.exit(1);
   })
   .finally(async () => {
