@@ -21,6 +21,7 @@ export class UsersService {
     }
     return user;
   }
+
   async editUser(userId: number, dto: EditUserDto) {
     const user = await this.prisma.user.update({
       where: { id: userId },
@@ -36,5 +37,30 @@ export class UsersService {
     });
 
     return user;
+  }
+
+  async getAllUsers() {
+    return this.prisma.user.findMany({
+      select: {
+        id: true,
+        email: true,
+        username: true,
+        role: true,
+      },
+      orderBy: { id: 'desc' },
+    });
+  }
+
+  async updateUserRole(userId: number, role: 'ADMIN'| 'USER') {
+    return this.prisma.user.update({
+      where: {id: userId},
+      data: {role},
+      select: {
+        id: true,
+        email: true,
+        username: true,
+        role: true,
+      }
+    })
   }
 }

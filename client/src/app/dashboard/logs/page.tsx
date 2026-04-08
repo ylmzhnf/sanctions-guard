@@ -86,7 +86,7 @@ export default function LogsPage() {
                         {userEmail ?? 'Unknown'}
                       </td>
                       <td className="px-6 py-4">
-                        <Badge variant={log.status?.toLowerCase() === 'critical' ? 'critical' : 'default'}>
+                        <Badge variant={(log.status?.toLowerCase() as any) || 'default'}>
                           {log.status ?? 'LOGGED'}
                         </Badge>
                       </td>

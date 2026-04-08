@@ -8,6 +8,7 @@ import { ShieldCheck, ArrowRight, UserPlus } from 'lucide-react';
 
 export default function RegisterPage() {
   const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -23,8 +24,8 @@ export default function RegisterPage() {
   }, [token, router]);
 
   const validateForm = () => {
-    if (!email.trim() || !password.trim() || !confirmPassword.trim()) {
-      setError('Please fill in all fields.');
+    if (!email.trim() || !username.trim() || !password.trim() || !confirmPassword.trim()) {
+      setError('Please fill in all fields (Email, Username, and Passwords).');
       return false;
     }
 
@@ -51,7 +52,7 @@ export default function RegisterPage() {
 
     setIsLoading(true);
     try {
-      await api.post('/auth/register', { email, password });
+      await api.post('/auth/register', { email, password, username });
       router.push('/login?registered=1');
     } catch (err) {
       setError('Registration failed. Email may already be in use.');
@@ -87,6 +88,18 @@ export default function RegisterPage() {
               required
               className="w-full rounded-2xl border border-slate-700 bg-[#141A25] px-4 py-3 text-white outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
               placeholder="you@company.com"
+            />
+          </div>
+
+          <div>
+            <label className="block text-slate-400 text-sm font-medium mb-2">Username</label>
+            <input
+              type="text"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              required
+              className="w-full rounded-2xl border border-slate-700 bg-[#141A25] px-4 py-3 text-white outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+              placeholder="Your full name"
             />
           </div>
 

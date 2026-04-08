@@ -25,7 +25,7 @@ export class AuditService {
   }
 
   async getAuditLogs() {
-    return this.prisma.auditLog.findMany({
+    const logs = await this.prisma.auditLog.findMany({
       orderBy: { timestamp: 'desc' },
       include: {
         user: {
@@ -34,6 +34,20 @@ export class AuditService {
           },
         },
       },
+    });
+
+    return logs.map((log) => {
+      let status = 'CLEAR';
+      if (log.similarityScore !== null && log.similarityScore !== undefined) {
+        if (log.similarityScore >= 95) status = 'CRITICAL';
+        else if (log.similarityScore >= 85) status = 'HIGH';
+        else if (log.similarityScore >= 70) status = 'MEDIUM';
+        else status = 'LOW';
+      }
+      return {
+        ...log,
+        status,
+      };
     });
   }
 }

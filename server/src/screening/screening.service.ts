@@ -14,7 +14,7 @@ type RiskLevel = 'Low' | 'Medium' | 'High' | 'Exact Match';
 
 @Injectable()
 export class ScreeningService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService) { }
 
   calculateSimilarity(str1: string, str2: string): number {
     // 1. Convert to lowercase and trim whitespace
