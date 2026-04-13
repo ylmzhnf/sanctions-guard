@@ -14,23 +14,23 @@ type RiskLevel = 'Low' | 'Medium' | 'High' | 'Exact Match';
 
 @Injectable()
 export class ScreeningService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService) { }
 
   calculateSimilarity(str1: string, str2: string): number {
-    // 1. Küçük harfe çevirme ve boşluk kontrolü
+    // 1. Convert to lowercase and trim whitespace
     const s1 = str1.toLowerCase().trim();
     const s2 = str2.toLowerCase().trim();
 
     if (s1.length === 0 || s2.length === 0) return 0;
     if (s1 === s2) return 100;
 
-    // 2. Matris oluşturma
+    // 2. Build the matrix
     const matrix: number[][] = Array.from(
       { length: s1.length + 1 },
       (): number[] => Array.from({ length: s2.length + 1 }, (): number => 0),
     );
 
-    // 3. Başlangıç  değerlerini doldurma
+    // 3. Fill initial values
     for (let i = 0; i <= s1.length; i++) {
       matrix[i][0] = i;
     }
@@ -38,24 +38,24 @@ export class ScreeningService {
       matrix[0][j] = j;
     }
 
-    // 4. Fark hesaplama
+    // 4. Calculate differences
     for (let i = 1; i <= s1.length; i++) {
       for (let j = 1; j <= s2.length; j++) {
         if (s1[i - 1] === s2[j - 1]) {
-          // Harfler aynıysa çaprazdaki maliyet aynen geçer
+          // If the characters match, carry forward the diagonal cost
           matrix[i][j] = matrix[i - 1][j - 1];
         } else {
-          // Harfler farklıysa en küçük maliyetli işlemi seç ve +1 ekle
+          // If the characters differ, choose the smallest operation cost and add 1
           matrix[i][j] =
             Math.min(
-              matrix[i - 1][j], //sil
-              matrix[i][j - 1], //ekle
-              matrix[i - 1][j - 1], //degistir
+              matrix[i - 1][j], // delete
+              matrix[i][j - 1], // insert
+              matrix[i - 1][j - 1], // replace
             ) + 1;
         }
       }
     }
-    // 5. Mesafe değerini yüzdeye cevirme
+    // 5. Convert distance to percentage
     const distance = matrix[s1.length][s2.length];
     const maxLength = Math.max(s1.length, s2.length);
     return 100 - (distance * 100) / maxLength;
@@ -67,7 +67,7 @@ export class ScreeningService {
     return 'Low';
   }
 
-  //pg_trigam
+  // pg_trgm
   async searchSanctionedNames(queryName: string, userId: number) {
     const result = await this.prisma.$queryRaw<RawSanctionResult[]>`
     SELECT 

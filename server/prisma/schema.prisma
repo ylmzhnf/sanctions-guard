@@ -51,7 +51,7 @@ model AuditLog {
   matchedName       String?
   similarityScore   Float?
 
-  // İlişkiler
+  // Relations
 
   userId            Int
   user              User    @relation(fields: [userId], references: [id])
