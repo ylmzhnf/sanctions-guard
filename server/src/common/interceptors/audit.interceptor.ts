@@ -10,18 +10,6 @@ import { tap } from 'rxjs/operators';
 import { AuditService } from 'src/audit/audit.service';
 import { RequestWithUser } from 'src/auth/types/auth.types';
 
-interface SearchResultItem {
-  fullName: string;
-  score: number;
-  id: number;
-}
-
-interface ResponseShape {
-  success: boolean;
-  count: number;
-  data?: SearchResultItem[];
-}
-
 @Injectable()
 export class AuditInterceptor implements NestInterceptor {
   private readonly logger = new Logger(AuditInterceptor.name);
@@ -39,22 +27,20 @@ export class AuditInterceptor implements NestInterceptor {
     if (!user || !queryName) return next.handle();
 
     return next.handle().pipe(
-      tap((body: unknown) => {
-        const response = body as ResponseShape;
-        const result = response.data || [];
-        let bestMatch: SearchResultItem | null = null;
-
-        if (result.length > 0) {
-          bestMatch = result[0];
-        }
+      tap((body: any) => {
+        const { queryId, riskLevel, count } = body;
 
         this.auditService
           .createAuditLog({
             userId: user.id,
-            queriedName: queryName,
-            matchedName: bestMatch?.fullName,
-            similarityScore: bestMatch?.score,
-            sanctionId: bestMatch?.id,
+            orgId: user.orgId,
+            action: 'SCREENING_SEARCH',
+            metadata: {
+              queryName,
+              riskLevel,
+              matchedCount: count || 0,
+            },
+            queryId: queryId,
           })
           .catch((error) => {
             this.logger.error('Audit log error: ', error);

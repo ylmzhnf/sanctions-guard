@@ -9,7 +9,7 @@ import { appRouterContext } from "next/dist/server/route-modules/app-route/share
 import api from "@/lib/api";
 
 type UserData = {
-  id: number;
+  id: string;
   username: string | null;
   email: string;
   role: 'ADMIN' | 'USER';
@@ -34,7 +34,7 @@ export default function SettingsPage() {
   });
 
   const roleMutation = useMutation({
-    mutationFn: async ({ userId, role}: { userId: number; role: string }) => {
+    mutationFn: async ({ userId, role}: { userId: string; role: string }) => {
       await api.patch(`/users/${userId}/role`, {role});
     },
     onMutate: async ({ userId, role }) => {
@@ -56,7 +56,7 @@ export default function SettingsPage() {
     }
   });
 
-  const handleRoleChange = (userId:number, newRole: string) => {
+  const handleRoleChange = (userId: string, newRole: string) => {
     if (userId === user?.id) {
       alert("Security Protocol: You cannot change your own role directly.");
       return;
@@ -95,7 +95,9 @@ export default function SettingsPage() {
         </div>
         <div>
           <h1 className="text-2xl font-bold text-white tracking-tight">Administration Panel</h1>
-          <p className="text-sm text-slate-400">Configure core engine parameters and manage system access</p>
+          <p className="text-sm text-slate-400">
+            {user?.organization?.name ? `Managing ${user.organization.name}` : 'Configure core engine parameters and manage system access'}
+          </p>
         </div>
       </div>
 

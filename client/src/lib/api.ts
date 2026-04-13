@@ -30,4 +30,38 @@ api.interceptors.response.use(
   },
 );
 
+export enum ListSource {
+  OFAC = "OFAC",
+  EU = "EU",
+  UN = "UN",
+  UK_HMT = "UK_HMT",
+  OTHER = "OTHER",
+}
+
+export enum RiskLevel {
+  CLEAR = "CLEAR",
+  LOW = "LOW",
+  MEDIUM = "MEDIUM",
+  HIGH = "HIGH",
+  CRITICAL = "CRITICAL",
+}
+
+export interface SanctionedEntity {
+  id: string;
+  name: string;
+  listSource: ListSource;
+  country?: string;
+  reason?: string;
+  createdAt: string;
+}
+
+export interface ScreeningQuery {
+  id: string;
+  searchedName: string;
+  status: string;
+  riskLevel: RiskLevel;
+  matchedCount: number;
+  createdAt: string;
+}
+
 export default api;

@@ -7,17 +7,13 @@ import api from "@/lib/api";
 import { useMutation } from "@tanstack/react-query";
 
 type SearchResult = {
-  id: string | number;
-  matchName?: string;
-  fullName?: string;
-  matchScore?: number;
-  score?: number;
-  source?: string;
-  riskLevel?: string;
-  aiAnalysis?: string;
-  analysis?: string; 
-  reason?: string;
-  fuzzyBreakdown?: Record<string, number>;
+  id: string;
+  name: string;
+  score: number;
+  listSource: string;
+  riskLevel: string;
+  reason: string;
+  createdAt: string;
 };
 
 export default function SearchPage() {
@@ -27,8 +23,7 @@ export default function SearchPage() {
   const searchMutation = useMutation<SearchResult[], unknown, string>({
     mutationFn: async (query: string) => {
       const response = await api.get(`/screening/search?queryName=${query}`);
-      const rawData = response.data.success ? response.data.data : response.data;
-      return Array.isArray(rawData) ? rawData : [];
+      return response.data.success ? response.data.data : [];
     },
     onSuccess: (data) => {
       if (data.length > 0) setSelectedResult(null);
@@ -45,7 +40,7 @@ export default function SearchPage() {
   const isSearching = searchMutation.isPending;
 
   const getAnalysisText = (item: SearchResult) => {
-    return item.aiAnalysis || item.analysis || item.reason || "Detailed analysis for this match is being processed.";
+    return item.reason || "Detailed analysis for this match is being processed.";
   };
 
   return (
@@ -124,16 +119,16 @@ export default function SearchPage() {
                     className={`p-5 border-b border-slate-800 cursor-pointer transition-all ${selectedResult?.id === item.id ? 'bg-blue-600/10 border-l-4 border-l-blue-600' : 'hover:bg-slate-800'}`}
                   >
                     <div className="flex justify-between items-start mb-2">
-                      <p className="font-bold text-white text-sm">{item.matchName ?? item.fullName ?? 'Unnamed Entity'}</p>
+                      <p className="font-bold text-white text-sm">{item.name || 'Unnamed Entity'}</p>
                       <p className="text-[10px] font-bold text-blue-500 bg-blue-500/10 px-1.5 py-0.5 rounded">
-                        %{Math.round(item.matchScore ?? item.score ?? 0)}
+                        %{Math.round(item.score ?? 0)}
                       </p>
                     </div>
                     <div className="flex items-center justify-between">
-                      <p className="text-[10px] text-slate-500 truncate mr-2">{item.source ?? 'Global Watchlist'}</p>
+                      <p className="text-[10px] text-slate-500 truncate mr-2">{item.listSource ?? 'Global Watchlist'}</p>
                       <Badge 
                         className="text-[9px] h-5" 
-                        variant={item.riskLevel?.toLowerCase() === 'high' ? 'critical' : 'low'}
+                        variant={item.riskLevel?.toLowerCase() === 'high' || item.riskLevel?.toLowerCase() === 'critical' || item.riskLevel?.toLowerCase() === 'exact match' ? 'critical' : 'low'}
                       >
                         {item.riskLevel ?? 'N/A'}
                       </Badge>
@@ -155,10 +150,10 @@ export default function SearchPage() {
               <div className="flex flex-col h-full overflow-hidden animate-in slide-in-from-right-2 duration-300">
                 <div className="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-900/20">
                   <div>
-                    <h3 className="text-2xl font-bold text-white mb-1">{selectedResult.matchName ?? selectedResult.fullName}</h3>
+                    <h3 className="text-2xl font-bold text-white mb-1">{selectedResult.name}</h3>
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-slate-500">Source Index:</span>
-                      <span className="text-xs text-blue-400 font-medium">{selectedResult.source ?? 'International Database'}</span>
+                      <span className="text-xs text-blue-400 font-medium">{selectedResult.listSource ?? 'International Database'}</span>
                     </div>
                   </div>
                   <div className="text-right">
@@ -166,7 +161,7 @@ export default function SearchPage() {
                     <Badge 
                       className="px-4 py-1 uppercase"
                       variant={
-                        selectedResult.riskLevel?.toLowerCase() === 'high' ? 'critical' :
+                        selectedResult.riskLevel?.toLowerCase() === 'high' || selectedResult.riskLevel?.toLowerCase() === 'critical' || selectedResult.riskLevel?.toLowerCase() === 'exact match' ? 'critical' :
                         selectedResult.riskLevel?.toLowerCase() === 'medium' ? 'warning' :
                         'low'
                       }
@@ -190,26 +185,6 @@ export default function SearchPage() {
                       {getAnalysisText(selectedResult)}
                     </p>
                   </div>
-                  
-                  {/* Similarity Breakdown */}
-                  {selectedResult.fuzzyBreakdown && (
-                    <div className="bg-[#0B0F14] p-5 rounded-xl border border-slate-800">
-                      <p className="text-[10px] text-slate-500 uppercase font-bold mb-4 tracking-tighter">Fuzzy Matching Breakdown</p>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
-                        {Object.entries(selectedResult.fuzzyBreakdown).map(([k, v]) => (
-                          <div key={k} className="space-y-1.5">
-                            <div className="flex justify-between text-[10px] uppercase font-medium">
-                              <span className="text-slate-400">{k.replace(/([A-Z])/g, ' $1')}</span>
-                              <span className="text-blue-500 font-bold">%{Math.round(v as number)}</span>
-                            </div>
-                            <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
-                              <div className="bg-blue-600 h-full transition-all duration-1000" style={{width: `${v}%`}}></div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
 
                   <div className="flex items-center gap-2 text-[10px] text-slate-600 bg-slate-900/50 p-3 rounded-lg border border-slate-800/50">
                     <Lock className="w-3 h-3" />

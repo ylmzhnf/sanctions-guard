@@ -5,56 +5,153 @@
 // Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
 
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
   previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
-  provider = "postgresql"
+  provider   = "postgresql"
   extensions = [pg_trgm]
 }
 
-enum Role{
+enum Role {
   USER
   ADMIN
 }
 
-model User {
-  id        Int        @id @default(autoincrement())
-  email     String    @unique
-  password  String
-  username  String?
-  role      Role    @default(USER)
-  logs      AuditLog[]   
-  
+enum Plan {
+  FREE
+  STARTER
+  BUSINESS
+  ENTERPRISE
 }
 
-model SanctionList {
-  id          Int        @id @default(autoincrement())
-  fullName    String
-  source      String
-  reason      String?   @db.Text
+model Organization {
+  id               String    @id @default(cuid())
+  name             String
+  stripeCustomerId String?   @unique
+  plan             Plan      @default(FREE)
+  queriesUsed      Int       @default(0)
+  queriesLimit     Int       @default(10)
+  billingPeriodEnd DateTime?
+  createdAt        DateTime  @default(now())
+
+  users     User[]
+  queries   ScreeningQuery[]
+  auditLogs AuditLog[]
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  username  String?
+  name      String?
+  role      Role     @default(USER)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  organization Organization? @relation(fields: [orgId], references: [id])
+  orgId        String?
+
+  queries ScreeningQuery[]
+  logs    AuditLog[]
+}
+
+enum ListSource {
+  OFAC
+  EU
+  UN
+  UK_HMT
+  OTHER
+}
+
+model SanctionedEntity {
+  id          String     @id @default(cuid())
+  externalId  String     @unique
+  name        String
+  aliases     String[]
+  entityType  String
+  listSource  ListSource
+  reason      String?    @db.Text
   country     String?
   type        String?
-  externalId  String?   @unique
-  createdAt   DateTime  @default(now())
+  issueDate   DateTime?
+  moreInfoUrl String?
+  createdAt   DateTime   @default(now())
 
-  logs        AuditLog[]
+  matches ScreeningMatch[]
 
-  @@index([fullName(ops: raw("gin_trgm_ops"))], type: Gin)
+  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin)
+}
+
+enum RiskLevel {
+  CLEAR
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum ScreeningStatus {
+  PENDING
+  COMPLETED
+  FAILED
+}
+
+model ScreeningQuery {
+  id           String          @id @default(cuid())
+  searchedName String
+  fuzzyMatch   Boolean         @default(true)
+  exactMatch   Boolean         @default(false)
+  status       ScreeningStatus @default(PENDING)
+  matchedCount Int             @default(0)
+  riskLevel    RiskLevel?
+  reportUrl    String?
+  createdAt    DateTime        @default(now())
+
+  user   User   @relation(fields: [userId], references: [id])
+  userId String
+
+  org   Organization @relation(fields: [orgId], references: [id])
+  orgId String
+
+  matches  ScreeningMatch[]
+  auditLog AuditLog?
+
+  @@index([orgId, createdAt])
+}
+
+model ScreeningMatch {
+  id              String     @id @default(cuid())
+  matchedEntityId String
+  matchedName     String
+  similarityScore Float
+  matchedField    String
+  listSource      ListSource
+
+  query   ScreeningQuery @relation(fields: [queryId], references: [id])
+  queryId String
+
+  entity SanctionedEntity @relation(fields: [matchedEntityId], references: [id])
 }
 
 model AuditLog {
-  id                Int        @id @default(autoincrement())
-  timestamp         DateTime  @default(now())
-  queriedName       String    
-  matchedName       String?
-  similarityScore   Float?
+  id            String   @id @default(cuid())
+  action        String
+  metadata      Json
+  integrityHash String
+  createdAt     DateTime @default(now())
 
   // Relations
+  org   Organization @relation(fields: [orgId], references: [id])
+  orgId String
 
-  userId            Int
-  user              User    @relation(fields: [userId], references: [id])
-  sanctionId        Int?
-  sanction          SanctionList? @relation(fields: [sanctionId], references: [id])
+  user   User   @relation(fields: [userId], references: [id])
+  userId String
+
+  query   ScreeningQuery? @relation(fields: [queryId], references: [id])
+  queryId String?         @unique
+
+  @@index([orgId, createdAt])
 }
