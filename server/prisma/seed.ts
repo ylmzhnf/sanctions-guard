@@ -57,15 +57,20 @@ async function main() {
           ? sanctionReason
           : 'No reason provided';
 
-    await prisma.sanctionList.upsert({
+    await prisma.sanctionedEntity.upsert({
       where: { externalId: entity.id },
-      update: { fullName, country, reason, type: entity.schema || 'Unknown' },
+      update: { 
+        name: fullName, 
+        country, 
+        reason, 
+        entityType: entity.schema || 'Unknown' 
+      },
       create: {
         externalId: entity.id,
-        fullName,
-        source: 'OpenSanctions',
+        name: fullName,
+        listSource: 'OTHER',
         country,
-        type: entity.schema || 'Unknown',
+        entityType: entity.schema || 'Unknown',
         reason,
       },
     });

@@ -1,18 +1,19 @@
-import { IsNumber, IsString } from 'class-validator';
+import { IsString, IsObject, IsOptional } from 'class-validator';
 
 export class AuditEntryDto {
-  @IsNumber()
-  userId: number;
+  @IsString()
+  userId: string;
 
   @IsString()
-  queriedName: string;
+  orgId: string;
 
   @IsString()
-  matchedName?: string;
+  action: string;
 
-  @IsNumber()
-  similarityScore?: number;
+  @IsObject()
+  metadata: any;
 
-  @IsNumber()
-  sanctionId?: number;
+  @IsString()
+  @IsOptional()
+  queryId?: string;
 }

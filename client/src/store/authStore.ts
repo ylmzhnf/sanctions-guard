@@ -1,11 +1,19 @@
 import { create } from 'zustand';
 import Cookies from 'js-cookie';
 
+interface Organization {
+  id: string;
+  name: string;
+  plan: 'FREE' | 'STARTER' | 'BUSINESS' | 'ENTERPRISE';
+}
+
 interface User {
-  id: number;
+  id: string;
   email: string;
   role: 'ADMIN' | 'USER';
   username?: string;
+  orgId: string;
+  organization?: Organization;
 }
 
 interface AuthState {

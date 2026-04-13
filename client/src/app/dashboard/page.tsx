@@ -8,12 +8,14 @@ import api from '@/lib/api';
 import { Loader2, Info } from 'lucide-react';
 
 interface AuditLog {
-  id: number;
-  queriedName?: string;
-  matchedName?: string;
-  user?: { email: string } | string;
-  timestamp?: string;
-  similarityScore?: number;
+  id: string;
+  action: string;
+  metadata: {
+    queryName?: string;
+    riskLevel?: string;
+    matchedCount?: number;
+  };
+  createdAt: string;
 }
 
 export default function DashboardPage() {
@@ -24,7 +26,7 @@ export default function DashboardPage() {
     queryFn: async () => {
       try {
         const response = await api.get('/audit/logs');
-        return response.data?.data ?? [];
+        return response.data ?? [];
       } catch {
         return [];
       }
@@ -35,7 +37,7 @@ export default function DashboardPage() {
 
   const getCriticalCount = () => {
     return (auditLogs as AuditLog[]).filter(
-      (log: AuditLog) => (log.similarityScore ?? 0) > 80
+      (log: AuditLog) => log.metadata?.riskLevel === 'CRITICAL' || log.metadata?.riskLevel === 'Exact Match'
     ).length;
   };
 
@@ -96,29 +98,34 @@ export default function DashboardPage() {
             <table className="w-full text-left">
               <thead className="bg-[#0B0F14]/50 text-[10px] text-slate-500 uppercase tracking-widest font-bold">
                 <tr>
-                  <th className="px-6 py-4">Query ID</th>
+                  <th className="px-6 py-4">Task ID</th>
+                  <th className="px-6 py-3">Action</th>
                   <th className="px-6 py-3">Search Term</th>
-                  <th className="px-6 py-3">Match Score</th>
                   <th className="px-6 py-3 text-right">Timestamp</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800 text-sm">
                 {recentLogs.map((log: AuditLog) => {
-                  const score = log.similarityScore ?? 0;
-                  const status = score > 80 ? 'critical' : score > 50 ? 'warning' : 'clear';
+                  const risk = log.metadata?.riskLevel?.toLowerCase() || 'clear';
+                  const status = risk === 'critical' || risk === 'exact match' ? 'critical' : risk === 'high' ? 'critical' : risk === 'medium' ? 'warning' : 'clear';
                   return (
                     <tr key={log.id} className="hover:bg-slate-800/40 transition-colors group">
                       <td className="px-6 py-4 font-mono text-xs text-slate-500 group-hover:text-slate-300">
-                        #{log.id}
-                      </td>
-                      <td className="px-6 py-4 font-medium text-white italic">
-                        {log.queriedName ?? 'Unknown'}
+                        {log.id.substring(0, 8)}...
                       </td>
                       <td className="px-6 py-4">
-                        <Badge variant={status}>{score}%</Badge>
+                        <Badge variant="default" className="text-[10px] opacity-70">{log.action}</Badge>
+                      </td>
+                      <td className="px-6 py-4 font-medium text-white italic">
+                        {log.metadata?.queryName || 'N/A'}
+                        {log.metadata?.riskLevel && (
+                          <span className="ml-2">
+                             <Badge variant={status} className="text-[8px] h-4 px-1">{log.metadata.riskLevel}</Badge>
+                          </span>
+                        )}
                       </td>
                       <td className="px-6 py-4 text-right text-slate-500 text-xs font-medium">
-                        {log.timestamp ? new Date(log.timestamp).toLocaleString('en-US') : '-'}
+                        {log.createdAt ? new Date(log.createdAt).toLocaleString('en-US') : '-'}
                       </td>
                     </tr>
                   );

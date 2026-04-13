@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Patch, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, UseGuards } from '@nestjs/common';
 import { JwtGuard } from 'src/auth/guard/jwt.guard';
 import { RolesGuard } from 'src/auth/guard/roles.guard';
 import { UsersService } from './users.service';
@@ -19,7 +19,7 @@ export class UsersController {
   }
 
   @Patch()
-  editUser(@GetUser('id') userId: number, @Body() dto: EditUserDto) {
+  editUser(@GetUser('id') userId: string, @Body() dto: EditUserDto) {
     return this.userService.editUser(userId, dto);
   }
 
@@ -34,7 +34,7 @@ export class UsersController {
   @Roles(Role.ADMIN)
   @Patch(':id/role')
   updateUserRole(
-    @Param('id', ParseIntPipe) id:number,
+    @Param('id') id: string,
     @Body('role') role: 'ADMIN' | 'USER' 
   ){
     return this.userService.updateUserRole(id, role);

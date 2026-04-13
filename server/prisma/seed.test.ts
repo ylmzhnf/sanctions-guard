@@ -13,42 +13,54 @@ if (!process.env.DATABASE_URL) {
   throw new Error('DATABASE_TEST_URL is not defined');
 }
 async function main() {
-  await prisma.sanctionList.deleteMany();
-  await prisma.sanctionList.createMany({
+  await prisma.sanctionedEntity.deleteMany();
+  await prisma.sanctionedEntity.createMany({
     data: [
       {
-        fullName: 'Mohamed Ali',
-        source: 'OpenSanctions-TEST',
+        externalId: 'TEST-1',
+        name: 'Mohamed Ali',
+        listSource: 'OTHER',
+        entityType: 'Individual',
         reason: 'Known alias variations',
         country: 'EG',
       },
       {
-        fullName: 'Muhammad Ali',
-        source: 'OpenSanctions-TEST',
+        externalId: 'TEST-2',
+        name: 'Muhammad Ali',
+        listSource: 'OTHER',
+        entityType: 'Individual',
         reason: 'Alternate spelling',
         country: 'PK',
       },
       {
-        fullName: 'Osama Bin Laden',
-        source: 'OpenSanctions-TEST',
+        externalId: 'TEST-3',
+        name: 'Osama Bin Laden',
+        listSource: 'OTHER',
+        entityType: 'Individual',
         reason: 'Terrorism financing',
         country: 'SA',
       },
       {
-        fullName: 'Usama Bin Ladin',
-        source: 'OpenSanctions-TEST',
+        externalId: 'TEST-3',
+        name: 'Usama Bin Ladin',
+        listSource: 'OTHER',
+        entityType: 'Individual',
         reason: 'Alias name',
         country: 'AF',
       },
       {
-        fullName: 'John Doe',
-        source: 'Synthetic-TEST',
+        externalId: 'TEST-5',
+        name: 'John Doe',
+        listSource: 'OTHER',
+        entityType: 'Individual',
         reason: 'False positive control record',
         country: 'US',
       },
       {
-        fullName: 'Jane Smith',
-        source: 'Synthetic-TEST',
+        externalId: 'TEST-6',
+        name: 'Jane Smith',
+        listSource: 'OTHER',
+        entityType: 'Individual',
         reason: 'Noise data for similarity threshold testing',
         country: 'GB',
       },

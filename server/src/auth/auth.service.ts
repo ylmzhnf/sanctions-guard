@@ -23,15 +23,33 @@ export class AuthService {
     const hashPassword = await bcrypt.hash(dto.password, salt);
 
     try {
-      const user = await this.prisma.user.create({
-        data: {
-          email: dto.email,
-          password: hashPassword,
-          username: dto.username,
-          role: Role.USER,
-        },
+      const result = await this.prisma.$transaction(async (tx) => {
+        // Create a default organization for the user
+        const organization = await tx.organization.create({
+          data: {
+            name: `${dto.username || dto.email.split('@')[0]}'s Organization`,
+          },
+        });
+
+        const user = await tx.user.create({
+          data: {
+            email: dto.email,
+            password: hashPassword,
+            username: dto.username,
+            role: Role.USER,
+            orgId: organization.id,
+          },
+        });
+
+        return { user, organization };
       });
-      return this.generateToken(user.id, user.email, user.role as Role);
+
+      return this.generateToken(
+        result.user.id,
+        result.user.email,
+        result.user.role as Role,
+        result.organization.id,
+      );
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError) {
         if (error.code === 'P2002') {
@@ -54,15 +72,27 @@ export class AuthService {
     if (!isPasswordValid) {
       throw new UnauthorizedException('Wrong password');
     }
-    return this.generateToken(user.id, user.email, user.role as Role);
+
+    if (!user.orgId) {
+       // This shouldn't happen with the new SaaS structure, but for existing users if any:
+       throw new UnauthorizedException('User has no organization assigned');
+    }
+
+    return this.generateToken(
+      user.id,
+      user.email,
+      user.role as Role,
+      user.orgId,
+    );
   }
 
   async generateToken(
-    userId: number,
+    userId: string,
     email: string,
     role: Role,
+    orgId: string,
   ): Promise<{ access_token: string }> {
-    const payload = { sub: userId, email, role };
+    const payload = { sub: userId, email, role, orgId };
     const token = await this.jwtService.signAsync(payload);
     return { access_token: token };
   }
