@@ -14,6 +14,8 @@ datasource db {
   extensions = [pg_trgm]
 }
 
+// ------- Enums ---------
+
 enum Role {
   USER
   ADMIN
@@ -25,6 +27,35 @@ enum Plan {
   BUSINESS
   ENTERPRISE
 }
+
+enum RiskLevel {
+  CLEAR
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum ScreeningStatus {
+  PENDING
+  COMPLETED
+  FAILED
+}
+
+enum ListSource {
+  OFAC
+  EU
+  UN
+  UK_HMT
+  OTHER
+}
+enum SyncStatus  { 
+  SUCCESS 
+  PARTIAL 
+  FAILED 
+}
+
+// -------Auth -------
 
 model Organization {
   id               String    @id @default(cuid())
@@ -42,14 +73,14 @@ model Organization {
 }
 
 model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  password  String
-  username  String?
-  name      String?
-  role      Role     @default(USER)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @default(now()) @updatedAt
+  id              String   @id @default(cuid())
+  email           String   @unique
+  passwordHash    String
+  username        String?
+  name            String?
+  role            Role     @default(USER)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @default(now()) @updatedAt
 
   organization Organization? @relation(fields: [orgId], references: [id])
   orgId        String?
@@ -58,13 +89,7 @@ model User {
   logs    AuditLog[]
 }
 
-enum ListSource {
-  OFAC
-  EU
-  UN
-  UK_HMT
-  OTHER
-}
+// -------Sanction Data -------
 
 model SanctionedEntity {
   id          String     @id @default(cuid())
@@ -73,40 +98,46 @@ model SanctionedEntity {
   aliases     String[]
   entityType  String
   listSource  ListSource
+  programs    String[]
   reason      String?    @db.Text
   country     String?
   type        String?
   issueDate   DateTime?
   moreInfoUrl String?
+  isActive    Boolean    @default(true) 
+  lastSyncedAt DateTime  @default(now())
   createdAt   DateTime   @default(now())
 
   matches ScreeningMatch[]
 
   @@index([name(ops: raw("gin_trgm_ops"))], type: Gin)
+  @@index([listSource, isActive]) 
+  @@index([isActive]) 
+
 }
 
-enum RiskLevel {
-  CLEAR
-  LOW
-  MEDIUM
-  HIGH
-  CRITICAL
+model ListSyncLog {                         
+  id             String     @id @default(cuid())
+  source         ListSource
+  status         SyncStatus
+  recordsAdded   Int        @default(0)
+  recordsUpdated Int        @default(0)
+  recordsRemoved Int        @default(0)
+  error          String?    @db.Text
+  syncedAt       DateTime   @default(now())
 }
 
-enum ScreeningStatus {
-  PENDING
-  COMPLETED
-  FAILED
-}
+// -------Screening -------
 
 model ScreeningQuery {
   id           String          @id @default(cuid())
-  searchedName String
+  queryName    String
   fuzzyMatch   Boolean         @default(true)
   exactMatch   Boolean         @default(false)
   status       ScreeningStatus @default(PENDING)
   matchedCount Int             @default(0)
   riskLevel    RiskLevel?
+  aiExplanation String?         @db.Text
   reportUrl    String?
   createdAt    DateTime        @default(now())
 
@@ -120,6 +151,7 @@ model ScreeningQuery {
   auditLog AuditLog?
 
   @@index([orgId, createdAt])
+  @@index([userId, createdAt])
 }
 
 model ScreeningMatch {
@@ -132,9 +164,13 @@ model ScreeningMatch {
 
   query   ScreeningQuery @relation(fields: [queryId], references: [id])
   queryId String
-
   entity SanctionedEntity @relation(fields: [matchedEntityId], references: [id])
+
+  @@index([queryId])
+  @@index([matchedEntityId])  
 }
+
+// -------Audit -------
 
 model AuditLog {
   id            String   @id @default(cuid())
@@ -147,11 +183,12 @@ model AuditLog {
   org   Organization @relation(fields: [orgId], references: [id])
   orgId String
 
-  user   User   @relation(fields: [userId], references: [id])
-  userId String
+  user   User?   @relation(fields: [userId], references: [id])
+  userId String?
 
   query   ScreeningQuery? @relation(fields: [queryId], references: [id])
   queryId String?         @unique
 
   @@index([orgId, createdAt])
+  @@index([userId])
 }
