@@ -13,6 +13,9 @@ import { RequestWithUser } from 'src/auth/types/auth.types';
 @Injectable()
 export class AuditInterceptor implements NestInterceptor {
   private readonly logger = new Logger(AuditInterceptor.name);
+
+  private readonly logger = new Logger(AuditInterceptor.name);
+
   constructor(private auditService: AuditService) {}
 
   intercept(
@@ -27,24 +30,32 @@ export class AuditInterceptor implements NestInterceptor {
     if (!user || !queryName) return next.handle();
 
     return next.handle().pipe(
-      tap((body: any) => {
-        const { queryId, riskLevel, count } = body;
+      tap({
+        next: (body: any) => {
+          const queryId = body.queryId;
+          const riskLevel = body.riskLevel;
+          const matchedCount = body.count || (body.data ? body.data.length : 0);
 
-        this.auditService
-          .createAuditLog({
-            userId: user.id,
-            orgId: user.orgId,
-            action: 'SCREENING_SEARCH',
-            metadata: {
-              queryName,
-              riskLevel,
-              matchedCount: count || 0,
-            },
-            queryId: queryId,
-          })
-          .catch((error) => {
-            this.logger.error('Audit log error: ', error);
-          });
+          this.auditService
+            .log({
+              userId: user.id,
+              orgId: user.orgId,
+              action: 'SCREENING_SEARCH',
+              queryId: queryId,
+              metadata: {
+                queryName,
+                riskLevel,
+                matchedCount,
+                source: 'WEB_API',
+              },
+            })
+            .catch((error) => {
+              this.logger.error(
+                'CRITICAL: AuditInterceptor failed to log',
+                error,
+              );
+            });
+        },
       }),
     );
   }

@@ -1,17 +1,20 @@
-import { IsString, IsObject, IsOptional } from 'class-validator';
+import { IsString, IsObject, IsOptional, IsNotEmpty } from 'class-validator';
 
 export class AuditEntryDto {
   @IsString()
-  userId: string;
+  @IsOptional()
+  userId?: string;
 
   @IsString()
+  @IsNotEmpty()
   orgId: string;
 
   @IsString()
+  @IsNotEmpty()
   action: string;
 
   @IsObject()
-  metadata: any;
+  metadata: Record<string, unknown>;
 
   @IsString()
   @IsOptional()

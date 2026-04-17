@@ -1,23 +1,27 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { ListSource, ScreeningStatus, RiskLevel as PrismaRiskLevel } from '@prisma/client';
+import { ListSource, ScreeningStatus, RiskLevel } from '@prisma/client';
+import { RedisService } from 'src/common/redis/redis.service';
+import { AuditService } from 'src/audit/audit.service';
+import { ScreenQueryDto } from './dto/screen-query.dto';
+import { matches } from 'class-validator';
 
-interface RawSanctionResult {
-  id: string;
-  name: string;
-  score: number;
-  listSource: ListSource;
-  reason: string;
-  country: string;
-  createdAt: Date;
-}
-type RiskLevel = 'Low' | 'Medium' | 'High' | 'Exact Match' | 'Clear';
-
+const PLAN_LIMITS = {
+  FREE: 10,
+  STARTER: 500,
+  BUSINESS: Infinity,
+  ENTERPRISE: Infinity,
+};
 @Injectable()
 export class ScreeningService {
-  constructor(private prisma: PrismaService) { }
+  constructor(
+    private prisma: PrismaService,
+    private redis: RedisService,
+    private aiExplainer: AiExplainerService, 
+    private audit: AuditService,
+  ) {}
 
-  calculateSimilarity(str1: string, str2: string): number {
+  private calculateSimilarity(str1: string, str2: string): number {
     const s1 = str1.toLowerCase().trim();
     const s2 = str2.toLowerCase().trim();
 
@@ -42,11 +46,8 @@ export class ScreeningService {
           matrix[i][j] = matrix[i - 1][j - 1];
         } else {
           matrix[i][j] =
-            Math.min(
-              matrix[i - 1][j],
-              matrix[i][j - 1],
-              matrix[i - 1][j - 1],
-            ) + 1;
+            Math.min(matrix[i - 1][j], matrix[i][j - 1], matrix[i - 1][j - 1]) +
+            1;
         }
       }
     }
@@ -55,81 +56,153 @@ export class ScreeningService {
     return 100 - (distance * 100) / maxLength;
   }
 
-  determineRiskLevel(score: number): RiskLevel {
-    if (score >= 95) return 'Exact Match';
-    if (score >= 85) return 'High';
-    if (score >= 70) return 'Medium';
-    if (score > 0) return 'Low';
-    return 'Clear';
+  private determineRiskLevel(score: number): RiskLevel {
+    if (score >= 95) return RiskLevel.CRITICAL;
+    if (score >= 85) return RiskLevel.HIGH;
+    if (score >= 70) return RiskLevel.MEDIUM;
+    if (score > 50) return RiskLevel.LOW;
+    return RiskLevel.CLEAR;
   }
 
-  mapToPrismaRiskLevel(risk: RiskLevel): PrismaRiskLevel {
-    switch (risk) {
-      case 'Exact Match': return PrismaRiskLevel.CRITICAL;
-      case 'High': return PrismaRiskLevel.HIGH;
-      case 'Medium': return PrismaRiskLevel.MEDIUM;
-      case 'Low': return PrismaRiskLevel.LOW;
-      default: return PrismaRiskLevel.CLEAR;
+  async screen(dto: ScreenQueryDto, userId: string, orgId: string) {
+    const queryName = dto.name.trim();
+
+    //Plan Limits
+
+    const org = await this.prisma.organization.findUniqueOrThrow({
+      where: { id: orgId },
+    });
+    if (org.queriesUsed >= PLAN_LIMITS[org.plan]) {
+      throw new ForbiddenException(
+        `Query limit reached for your ${org.plan} plan.`,
+      );
     }
-  }
 
-  async searchSanctionedNames(queryName: string, userId: string, orgId: string) {
-    const result = await this.prisma.$queryRaw<RawSanctionResult[]>`
+    //Caching with Redis
+
+    const cacheKey = `screening:${orgId}:${queryName}`;
+    const cached = await this.redis.get(cacheKey);
+    if (cached) return JSON.parse(cached);
+
+    //pg_trgm based candidate retrieval
+    const candidates = await this.prisma.$queryRaw<any[]>`
     SELECT 
     id, 
     "name", 
-    "listSource",     
-    "reason",     
+    "aliases",     
+    "entityType",     
     "country", 
-    "createdAt", 
-    similarity("name", ${queryName}) AS score
+    "programs",
+    "reason",
+    "listSource"
     FROM "SanctionedEntity" 
-    WHERE "name" % ${queryName} AND similarity ("name", ${queryName}) > 0.3
-    ORDER BY score DESC 
+    WHERE "isActive" = true 
+        AND (
+          "name" % ${queryName} 
+          OR 
+          array_to_string("aliases", ' ') % ${queryName}
+        )
+    ORDER BY "name" <-> ${queryName}
     LIMIT 50;`;
 
-    const refineResults = result.map((item) => {
-      const levenshteinScore = this.calculateSimilarity(
-        queryName,
-        item.name,
-      );
+    const refineResults = candidates.map((entity) => {
+      let bestScore = this.calculateSimilarity(queryName, entity.name);
+      let matchedField = 'name';
+      let matchedName = entity.name;
+
+      for (const alias of entity.aliases || []) {
+        const aliasScore = this.calculateSimilarity(queryName, alias);
+        if (aliasScore > bestScore) {
+          bestScore = aliasScore;
+          matchedField = 'alias';
+          matchedName = alias;
+        }
+      }
       return {
-        ...item,
-        score: levenshteinScore,
-        riskLevel: this.determineRiskLevel(levenshteinScore),
+        ...entity,
+        score: bestScore,
+        matchedField,
+        matchedName,
       };
     });
 
-    refineResults.sort((a, b) => b.score - a.score);
 
-    const bestMatch = refineResults.length > 0 ? refineResults[0] : null;
-    const finalRiskLevel = bestMatch ? this.determineRiskLevel(bestMatch.score) : 'Clear';
 
-    // Save Screening Query and Matches
-    const screeningQuery = await this.prisma.screeningQuery.create({
+    const topMatches = refineResults
+      .filter((r) => r.score > 50)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 10);
+
+    
+    const highestScore = topMatches.length > 0 ? topMatches[0].score : 0;
+
+    const riskLevel = this.determineRiskLevel(highestScore);
+
+    let aiExplanation: string | null = null;
+    if (riskLevel !== RiskLevel.CLEAR && topMatches.length > 0) {
+      aiExplanation = await this.aiExplainer.explain({
+        queryName: queryName,
+        matches: topMatches.slice(0, 3).map((m) => ({
+          name: m.matchedName,
+          similarity: m.score,
+          source: m.listSource,
+          entityType: m.entityType,
+          country: m.country,
+          programs: m.programs,
+        })),
+        riskLevel,
+      });
+    }
+
+    const queryRecord = await this.prisma.screeningQuery.create({
       data: {
-        searchedName: queryName,
-        userId: userId,
-        orgId: orgId,
+        queryName: queryName,
         status: ScreeningStatus.COMPLETED,
-        matchedCount: refineResults.length,
-        riskLevel: this.mapToPrismaRiskLevel(finalRiskLevel),
+        riskLevel,
+        matchedCount: topMatches.length,
+        aiExplanation,
+        userId,
+        orgId,
         matches: {
-          create: refineResults.slice(0, 10).map((match) => ({
-            matchedEntityId: match.id,
-            matchedName: match.name,
-            similarityScore: match.score,
-            matchedField: 'name',
-            listSource: match.listSource,
+          create: topMatches.map((m) => ({
+            matchedEntityId: m.id,
+            matchedName: m.matchedName,
+            similarityScore: m.score,
+            matchedField: m.matchedField,
+            listSource: m.listSource,
           })),
         },
       },
+      include: { matches: true },
     });
 
-    return {
-      results: refineResults,
-      queryId: screeningQuery.id,
-      riskLevel: finalRiskLevel
+    await this.prisma.organization.update({
+      where: { id: orgId },
+      data: { queriesUsed: { increment: 1 } },
+    });
+
+    await this.audit.log({
+      action: 'SCREENING_PERFORMED',
+      userId: userId,
+      orgId,
+      queryId: queryRecord.id,
+      metadata: {
+        queryName,
+        riskLevel,
+        matchedCount: topMatches.length,
+      },
+    });
+
+    const finalResult = {
+      queryId: queryRecord.id,
+      queryName,
+      riskLevel,
+      aiExplanation,
+      matches: topMatches,
     };
+    await this.redis.set(cacheKey, JSON.stringify(finalResult), 3600);
+
+    return finalResult;
+    
   }
 }
