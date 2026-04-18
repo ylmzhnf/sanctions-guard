@@ -18,25 +18,26 @@ export class UsersController {
     return this.userService.getUser(user.id);
   }
 
-  @Patch()
+  @Patch('me')
   editUser(@GetUser('id') userId: string, @Body() dto: EditUserDto) {
     return this.userService.editUser(userId, dto);
   }
 
   @UseGuards(RolesGuard)
   @Roles(Role.ADMIN)
-  @Get()
-  getAllUsers() {
-    return this.userService.getAllUsers();
+  @Get('org-members')
+  getOrgUsers(@GetUser('orgId') orgId: string) {
+    return this.userService.getAllUsersInOrg(orgId);
   }
 
   @UseGuards(RolesGuard)
   @Roles(Role.ADMIN)
   @Patch(':id/role')
   updateUserRole(
-    @Param('id') id: string,
-    @Body('role') role: 'ADMIN' | 'USER' 
-  ){
-    return this.userService.updateUserRole(id, role);
+    @GetUser('orgId') adminOrgId: string,
+    @Param('id') targetUserId: string,
+    @Body('role') role: Role,
+  ) {
+    return this.userService.updateUserRole(adminOrgId, targetUserId, role);
   }
 }
