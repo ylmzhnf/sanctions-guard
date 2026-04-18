@@ -7,34 +7,31 @@ import {
 } from '@nestjs/common';
 import { Observable } from 'rxjs';
 import { tap } from 'rxjs/operators';
-import { AuditService } from 'src/audit/audit.service';
-import { RequestWithUser } from 'src/auth/types/auth.types';
+import { AuditService } from '../../audit/audit.service';
+import { RequestWithUser } from '../../auth/types/auth.types';
 
 @Injectable()
 export class AuditInterceptor implements NestInterceptor {
   private readonly logger = new Logger(AuditInterceptor.name);
 
-  private readonly logger = new Logger(AuditInterceptor.name);
+  constructor(private readonly auditService: AuditService) {}
 
-  constructor(private auditService: AuditService) {}
-
-  intercept(
-    context: ExecutionContext,
-    next: CallHandler<any>,
-  ): Observable<any> {
+  intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
     const request = context.switchToHttp().getRequest<RequestWithUser>();
 
     const user = request.user;
     const queryName = request.query['queryName'] as string;
 
-    if (!user || !queryName) return next.handle();
+    if (!user || !queryName) {
+      return next.handle();
+    }
 
     return next.handle().pipe(
       tap({
         next: (body: any) => {
-          const queryId = body.queryId;
-          const riskLevel = body.riskLevel;
-          const matchedCount = body.count || (body.data ? body.data.length : 0);
+          const queryId = body?.queryId || null;
+          const riskLevel = body?.riskLevel || 'UNKNOWN';
+          const matchedCount = body?.count ?? (body?.data?.length || 0);
 
           this.auditService
             .log({
@@ -51,10 +48,16 @@ export class AuditInterceptor implements NestInterceptor {
             })
             .catch((error) => {
               this.logger.error(
-                'CRITICAL: AuditInterceptor failed to log',
+                `CRITICAL: AuditInterceptor failed to log for user ${user.id}`,
                 error,
               );
             });
+        },
+        error: (err) => {
+          this.logger.error(
+            `CRITICAL: AuditInterceptor failed to log for user ${user.id}`,
+            err,
+          );
         },
       }),
     );

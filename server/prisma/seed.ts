@@ -59,11 +59,11 @@ async function main() {
 
     await prisma.sanctionedEntity.upsert({
       where: { externalId: entity.id },
-      update: { 
-        name: fullName, 
-        country, 
-        reason, 
-        entityType: entity.schema || 'Unknown' 
+      update: {
+        name: fullName,
+        country,
+        reason,
+        entityType: entity.schema || 'Unknown',
       },
       create: {
         externalId: entity.id,

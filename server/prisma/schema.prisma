@@ -55,21 +55,47 @@ enum SyncStatus  {
   FAILED 
 }
 
+enum AiProvider {
+  OPENAI
+  ANTHROPIC
+}
+
 // -------Auth -------
 
 model Organization {
   id               String    @id @default(cuid())
   name             String
-  stripeCustomerId String?   @unique
   plan             Plan      @default(FREE)
   queriesUsed      Int       @default(0)
   queriesLimit     Int       @default(10)
+
+  lemonCustomerId        String?  @unique
+  lemonSubscriptionId    String?  @unique
   billingPeriodEnd DateTime?
+
+  isLifetime             Boolean  @default(false)
+
+  aiApiKey     String?
+  aiProvider   AiProvider @default(OPENAI)
+  
   createdAt        DateTime  @default(now())
 
   users     User[]
   queries   ScreeningQuery[]
   auditLogs AuditLog[]
+  appSumoCode            AppSumoCode?
+}
+
+model AppSumoCode {
+  id          String   @id @default(cuid())
+  code        String   @unique 
+  isUsed      Boolean  @default(false)
+  usedAt      DateTime?
+  
+  orgId       String?  @unique
+  org         Organization? @relation(fields: [orgId], references: [id])
+
+  @@index([code])
 }
 
 model User {

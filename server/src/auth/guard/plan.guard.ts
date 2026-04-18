@@ -1,11 +1,18 @@
-import { ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  CanActivate,
+  ExecutionContext,
+  ForbiddenException,
+} from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { RequestWithUser } from 'src/auth/types/auth.types'; // Tip güvenliği için ekledik
 
+@Injectable()
 export class PlanGuard implements CanActivate {
-  constructor(private prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const request = context.switchToHttp().getRequest();
+    const request = context.switchToHttp().getRequest<RequestWithUser>();
 
     const orgId = request.user?.orgId;
 
@@ -15,21 +22,20 @@ export class PlanGuard implements CanActivate {
 
     const org = await this.prisma.organization.findUnique({
       where: { id: orgId },
-      select: {
-        plan: true,
-        queriesUsed: true,
-        queriesLimit: true,
-      },
+      select: { plan: true, queriesUsed: true, queriesLimit: true },
     });
 
     if (!org) {
       throw new ForbiddenException('Organization not found');
     }
 
+    if (org.plan === 'ENTERPRISE' || org.plan === 'BUSINESS') {
+      return true;
+    }
+
     if (org.queriesUsed >= org.queriesLimit) {
       throw new ForbiddenException(
-        ` You have reached your monthly query limit  ${org.queries.limit}` +
-          `Please go to the subscription page to upgrade your plan. `,
+        'Monthly limit reached. Please upgrade your plan.',
       );
     }
 

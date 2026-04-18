@@ -21,7 +21,7 @@ export class ScreeningService {
     private audit: AuditService,
   ) {}
 
-  private calculateSimilarity(str1: string, str2: string): number {
+  public calculateSimilarity(str1: string, str2: string): number {
     const s1 = str1.toLowerCase().trim();
     const s2 = str2.toLowerCase().trim();
 
@@ -151,6 +151,8 @@ export class ScreeningService {
           programs: m.programs,
         })),
         riskLevel,
+        userApiKey: org.aiApiKey || '',
+        provider: org.aiProvider,
       });
     }
 

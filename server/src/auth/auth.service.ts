@@ -6,94 +6,150 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
-import { AuthDto } from './dto/authdto.dto';
 import { Prisma, Role } from '@prisma/client';
-import { ConfigService } from '@nestjs/config';
+import { RegisterDto } from './dto/register.dto';
+import { LoginDto } from './dto/login.dto';
 
 @Injectable()
 export class AuthService {
   constructor(
     private prisma: PrismaService,
     private jwtService: JwtService,
-    private configService: ConfigService,
   ) {}
 
-  async register(dto: AuthDto) {
-    const salt = await bcrypt.genSalt();
-    const hashPassword = await bcrypt.hash(dto.password, salt);
+  async register(dto: RegisterDto) {
+    const normalizedEmail = dto.email.toLowerCase().trim();
+
+    const existing = await this.prisma.user.findUnique({
+      where: { email: normalizedEmail },
+    });
+
+    if (existing) {
+      throw new ConflictException('This email address is already in use.');
+    }
+
+    const passwordHash = await bcrypt.hash(dto.password, 12);
 
     try {
       const result = await this.prisma.$transaction(async (tx) => {
-        // Create a default organization for the user
-        const organization = await tx.organization.create({
+        const org = await tx.organization.create({
           data: {
-            name: `${dto.username || dto.email.split('@')[0]}'s Organization`,
+            name:
+              dto.orgName ||
+              `${dto.name || normalizedEmail.split('@')[0]}'s Organization`,
+            plan: 'FREE',
+            queriesLimit: 10,
           },
         });
 
         const user = await tx.user.create({
           data: {
-            email: dto.email,
-            password: hashPassword,
-            username: dto.username,
-            role: Role.USER,
-            orgId: organization.id,
+            email: normalizedEmail,
+            passwordHash,
+            name: dto.name,
+            orgId: org.id,
+            role: Role.ADMIN,
           },
         });
 
-        return { user, organization };
+        return { user, org };
       });
 
-      return this.generateToken(
+      const token = this.signToken(
         result.user.id,
         result.user.email,
-        result.user.role as Role,
-        result.organization.id,
+        result.org.id,
+        result.user.role,
       );
+
+      return {
+        token,
+        user: {
+          id: result.user.id,
+          email: result.user.email,
+          name: result.user.name,
+          role: result.user.role,
+          orgId: result.org.id,
+          plan: result.org.plan,
+        },
+      };
     } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError) {
-        if (error.code === 'P2002') {
-          throw new ConflictException('Email already exists');
-        }
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        throw new ConflictException('This email address is already in use.');
       }
       throw error;
     }
   }
 
-  async login(dto: AuthDto) {
+  async login(dto: LoginDto) {
+    const normalizedEmail = dto.email.toLowerCase().trim();
+    const authErrorMsg = 'Invalid email or password.';
+
     const user = await this.prisma.user.findUnique({
-      where: { email: dto.email },
+      where: { email: normalizedEmail },
+      include: { organization: true },
     });
+
     if (!user) {
-      throw new UnauthorizedException('Invalid email or password');
+      throw new UnauthorizedException(authErrorMsg);
     }
 
-    const isPasswordValid = await bcrypt.compare(dto.password, user.password);
-    if (!isPasswordValid) {
-      throw new UnauthorizedException('Wrong password');
+    const valid = await bcrypt.compare(dto.password, user.passwordHash);
+    if (!valid) {
+      throw new UnauthorizedException(authErrorMsg);
     }
 
     if (!user.orgId) {
-       // This shouldn't happen with the new SaaS structure, but for existing users if any:
-       throw new UnauthorizedException('User has no organization assigned');
+      throw new UnauthorizedException('User has no organization assigned');
     }
 
-    return this.generateToken(
-      user.id,
-      user.email,
-      user.role as Role,
-      user.orgId,
-    );
+    const token = this.signToken(user.id, user.email, user.orgId, user.role);
+
+    return {
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        orgId: user.orgId,
+        plan: user.organization?.plan,
+        queriesUsed: user.organization?.queriesUsed,
+        queriesLimit: user.organization?.queriesLimit,
+      },
+    };
   }
 
-  async generateToken(
+  async getMe(userId: string) {
+    const user = await this.prisma.user.findUniqueOrThrow({
+      where: { id: userId },
+      include: { organization: true },
+    });
+
+    return {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+      org: {
+        id: user.organization?.id,
+        name: user.organization?.name,
+        plan: user.organization?.plan,
+        queriesUsed: user.organization?.queriesUsed,
+        queriesLimit: user.organization?.queriesLimit,
+      },
+    };
+  }
+
+  private signToken(
     userId: string,
     email: string,
-    role: Role,
     orgId: string,
-  ): Promise<{ access_token: string }> {
-    const payload = { sub: userId, email, role, orgId };
-    const token = await this.jwtService.signAsync(payload);
-    return { access_token: token };
+    role: string,
+  ): string {
+    return this.jwtService.sign({ sub: userId, email, orgId, role });
   }
 }

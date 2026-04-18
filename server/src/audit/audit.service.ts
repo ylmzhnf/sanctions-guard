@@ -1,4 +1,5 @@
 import { Injectable, Logger, ForbiddenException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditEntryDto } from './dto/audit-entry.dto';
 import * as crypto from 'crypto';
@@ -58,7 +59,7 @@ export class AuditService {
           userId: data.userId,
           orgId: data.orgId,
           queryId: data.queryId,
-          metadata: data.metadata,
+          metadata: data.metadata as Prisma.InputJsonValue,
           integrityHash,
           createdAt: new Date(timestamp),
         },
@@ -112,7 +113,7 @@ export class AuditService {
             select: { email: true, name: true }, 
           },
           query: {
-            select: { searchedName: true, riskLevel: true, status: true },
+            select: { queryName: true, riskLevel: true, status: true },
           },
         },
       }),

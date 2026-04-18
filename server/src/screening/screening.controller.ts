@@ -5,11 +5,12 @@ import {
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { ScreenQueryDto, SearchSanctionDto } from './dto/screen-query.dto';
+import { ScreenQueryDto } from './dto/screen-query.dto';
 import { JwtGuard } from 'src/auth/guard/jwt.guard';
+import { PlanGuard } from 'src/auth/guard/plan.guard';
 import { GetUser } from 'src/auth/decorator/get-user.decorator';
-import type { User } from '@prisma/client';
 import { AuditInterceptor } from 'src/common/interceptors/audit.interceptor';
+import { ScreeningService } from './screening.service';
 
 @UseGuards(JwtGuard)
 @Controller('screening')
