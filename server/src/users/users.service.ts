@@ -5,8 +5,7 @@ import { EditUserDto } from './dto/edit-user.dto';
 export class UsersService {
   constructor(private prisma: PrismaService) {}
 
-  //profili getir
-  async getUser(userId: number) {
+  async getUser(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: {
@@ -22,8 +21,8 @@ export class UsersService {
     }
     return user;
   }
-  // Profil güncelle
-  async editUser(userId: number, dto: EditUserDto) {
+
+  async editUser(userId: string, dto: EditUserDto) {
     const user = await this.prisma.user.update({
       where: { id: userId },
       data: {
@@ -38,5 +37,30 @@ export class UsersService {
     });
 
     return user;
+  }
+
+  async getAllUsers() {
+    return this.prisma.user.findMany({
+      select: {
+        id: true,
+        email: true,
+        username: true,
+        role: true,
+      },
+      orderBy: { id: 'desc' },
+    });
+  }
+
+  async updateUserRole(userId: string, role: 'ADMIN'| 'USER') {
+    return this.prisma.user.update({
+      where: {id: userId},
+      data: {role},
+      select: {
+        id: true,
+        email: true,
+        username: true,
+        role: true,
+      }
+    })
   }
 }

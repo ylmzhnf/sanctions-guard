@@ -18,29 +18,35 @@ import { AuditInterceptor } from 'src/common/interceptors/audit.interceptor';
 export class ScreeningController {
   constructor(private readonly screeningService: ScreeningService) {}
   @Get('search')
-  async search(@Query() query: SearchSanctionDto, @GetUser() user: User) {
-    const result = await this.screeningService.searchSanctionedNames(
+  async search(@Query() query: SearchSanctionDto, @GetUser() user: any) {
+    const { results, queryId, riskLevel } = await this.screeningService.searchSanctionedNames(
       query.queryName,
       user.id,
+      user.orgId,
     );
 
-    if (!result || result.length === 0) {
+    if (!results || results.length === 0) {
       return {
         success: true,
         count: 0,
         message: 'No match found',
         data: [],
+        queryId,
+        riskLevel,
       };
     }
-    const formattedResult = result.map((item) => ({
+
+    const formattedResults = results.map((item) => ({
       ...item,
       score: Number(item.score.toFixed(2)),
     }));
 
     return {
       success: true,
-      count: formattedResult.length,
-      data: formattedResult,
+      count: formattedResults.length,
+      data: formattedResults,
+      queryId,
+      riskLevel,
     };
   }
 }
