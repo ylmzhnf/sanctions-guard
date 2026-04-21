@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "SanctionsGuard",
-  description: "Advanced sanctions screening and compliance monitoring platform",
+  title: "SanctionsGuard — Real-time Sanctions Screening",
+  description: "Advanced sanctions screening and compliance monitoring platform. Screen entities against OFAC, EU, and UN sanctions lists instantly with AI-powered risk explanations and immutable audit trails.",
   icons: {
     icon: [
       { url: "/favicon.svg", type: "image/svg+xml" },
@@ -31,11 +31,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} font-sans bg-background text-foreground antialiased min-h-screen`}
       >
-        <Providers>{children}</Providers>
+        <Providers>
+          {children}
+        </Providers>
       </body>
     </html>
   );

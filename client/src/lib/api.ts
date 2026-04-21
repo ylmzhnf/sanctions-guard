@@ -2,7 +2,7 @@ import axios from "axios";
 import Cookies from "js-cookie";
 
 const api = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001',
+  baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api/v1',
   headers: {
     'Content-Type': 'application/json',
   },
@@ -22,45 +22,85 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response && error.response.status === 401) {
+    if (error.response?.status === 401) {
       Cookies.remove('access_token');
-      window.location.href = '/login';
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('sg-auth-storage');
+        window.location.href = '/auth/login';
+      }
     }
     return Promise.reject(error);
   },
 );
 
-export enum ListSource {
-  OFAC = "OFAC",
-  EU = "EU",
-  UN = "UN",
-  UK_HMT = "UK_HMT",
-  OTHER = "OTHER",
+export class ApiError extends Error {
+  status: number;
+  constructor(message: string, status: number = 500) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
 }
+
+export const billing = {
+  checkout: async (priceId: string) => {
+    try {
+      const res = await api.post('/billing/checkout', { priceId });
+      return res.data;
+    } catch (error: any) {
+      throw new ApiError(
+        error.response?.data?.message || 'Failed to start checkout',
+        error.response?.status
+      );
+    }
+  },
+  portal: async () => {
+    try {
+      const res = await api.post('/billing/portal');
+      return res.data;
+    } catch (error: any) {
+      throw new ApiError(
+        error.response?.data?.message || 'Failed to open billing portal',
+        error.response?.status
+      );
+    }
+  }
+};
 
 export enum RiskLevel {
-  CLEAR = "CLEAR",
-  LOW = "LOW",
-  MEDIUM = "MEDIUM",
-  HIGH = "HIGH",
-  CRITICAL = "CRITICAL",
+  CLEAR = "CLEAR", 
+  LOW = "LOW", 
+  MEDIUM = "MEDIUM", 
+  HIGH = "HIGH", 
+  CRITICAL = "CRITICAL"
 }
 
-export interface SanctionedEntity {
+export interface User {
   id: string;
-  name: string;
-  listSource: ListSource;
-  country?: string;
-  reason?: string;
-  createdAt: string;
+  email: string;
+  name?: string;
+  username?: string | null;
+  role: 'USER' | 'ADMIN';
+  orgId: string;
+  organization?: Organization;
+  org?: Organization;
+}
+
+export interface Organization {
+  id?: string;
+  name?: string;
+  plan: 'FREE' | 'STARTER' | 'BUSINESS' | 'ENTERPRISE';
+  queriesUsed: number;
+  queriesLimit: number;
+  isLifetime: boolean; 
 }
 
 export interface ScreeningQuery {
   id: string;
-  searchedName: string;
-  status: string;
+  queryName: string;
   riskLevel: RiskLevel;
   matchedCount: number;
+  aiExplanation?: string;
   createdAt: string;
 }
 

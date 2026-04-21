@@ -38,8 +38,8 @@ export class AuditInterceptor implements NestInterceptor {
               userId: user.id,
               orgId: user.orgId,
               action: 'SCREENING_SEARCH',
-              queryId: queryId,
               metadata: {
+                queryId,
                 queryName,
                 riskLevel,
                 matchedCount,

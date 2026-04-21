@@ -12,9 +12,9 @@ import { SanctionsSyncModule } from './sanctions-sync/sanctions-sync.module';
 
 @Module({
   imports: [
+    ConfigModule.forRoot({ isGlobal: true }),
     PrismaModule,
     ScreeningModule,
-    ConfigModule.forRoot({ isGlobal: true }),
     AuthModule,
     UsersModule,
     AuditModule,

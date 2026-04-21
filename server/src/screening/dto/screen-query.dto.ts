@@ -7,12 +7,12 @@ import {
 } from 'class-validator';
 
 export class ScreenQueryDto {
-  @IsString({ message: 'Name must be a string' })
-  @MinLength(2, { message: 'Name must be at least 2 characters long' })
+  @IsString({ message: 'queryName must be a string' })
+  @MinLength(2, { message: 'queryName must be at least 2 characters long' })
   @MaxLength(100, {
-    message: 'Name is too long. Maximum length is 100 characters',
+    message: 'queryName is too long. Maximum length is 100 characters',
   })
-  name: string;
+  queryName: string;
 
   @IsOptional()
   @IsEnum(['INDIVIDUAL', 'ENTITY', 'VESSEL', 'AIRCRAFT'], {

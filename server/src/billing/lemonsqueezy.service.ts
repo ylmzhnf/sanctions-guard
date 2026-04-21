@@ -12,7 +12,9 @@ export class LemonSqueezyService {
   async handleWebhook(rawBody: Buffer, signature: string) {
     const secret = process.env.LEMONSQUEEZY_WEBHOOK_SECRET;
     if (!secret) {
-      this.logger.error('CRITICAL: LEMONSQUEEZY_WEBHOOK_SECRET is not defined!');
+      this.logger.error(
+        'CRITICAL: LEMONSQUEEZY_WEBHOOK_SECRET is not defined!',
+      );
       throw new BadRequestException('Webhook configuration error');
     }
 
@@ -93,5 +95,87 @@ export class LemonSqueezyService {
     this.logger.log(
       `📉 Abonelik İptali: Org ${orgId} Ücretsiz pakete düşürüldü.`,
     );
+  }
+
+  async createCheckoutUrl(orgId: string, variantId: string): Promise<string> {
+    const apiKey = process.env.LEMONSQUEEZY_API_KEY;
+    const storeId = process.env.LEMONSQUEEZY_STORE_ID;
+
+    if (!apiKey) {
+      this.logger.warn('LemonSqueezy API Key eksik, test linki dönülüyor.');
+      return `https://app.lemonsqueezy.com/checkout/test?variant=${variantId}&custom_orgId=${orgId}`;
+    }
+
+    try {
+      const response = await fetch(
+        'https://api.lemonsqueezy.com/v1/checkouts',
+        {
+          method: 'POST',
+          headers: {
+            Accept: 'application/vnd.api+json',
+            'Content-Type': 'application/vnd.api+json',
+            Authorization: `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({
+            data: {
+              type: 'checkouts',
+              attributes: {
+                checkout_data: {
+                  custom: { orgId: orgId },
+                },
+              },
+              relationships: {
+                store: { data: { type: 'stores', id: storeId } },
+                variant: { data: { type: 'variants', id: variantId } },
+              },
+            },
+          }),
+        },
+      );
+
+      if (!response.ok) {
+        throw new Error('Lemon Squeezy API responded with error');
+      }
+
+      const result = await response.json();
+      return result.data.attributes.url; 
+    } catch (error) {
+      this.logger.error('Checkout URL oluşturulamadı', error);
+      throw new BadRequestException('Ödeme altyapısına bağlanılamadı.');
+    }
+  }
+
+  async getCustomerPortalUrl(orgId: string): Promise<string> {
+    const org = await this.prisma.organization.findUnique({
+      where: { id: orgId },
+    });
+
+    if (!org || !org.lemonCustomerId) {
+      throw new BadRequestException('Geçerli bir aboneliğiniz bulunmuyor.');
+    }
+
+    const apiKey = process.env.LEMONSQUEEZY_API_KEY;
+
+    try {
+      const response = await fetch(
+        `https://api.lemonsqueezy.com/v1/customers/${org.lemonCustomerId}`,
+        {
+          headers: {
+            Accept: 'application/vnd.api+json',
+            Authorization: `Bearer ${apiKey}`,
+          },
+        },
+      );
+
+      if (!response.ok) {
+        throw new Error('Lemon Squeezy API responded with error');
+      }
+
+      const result = await response.json();
+      return result.data.attributes.urls.customer_portal; 
+    } catch (error) {
+      this.logger.error('Portal URL oluşturulamadı', error);
+      throw new BadRequestException('Fatura portalına erişilemiyor.');
+    }
   }
 }

@@ -4,7 +4,7 @@ import { ListSource, ScreeningStatus, RiskLevel } from '@prisma/client';
 import { RedisService } from 'src/common/redis/redis.service';
 import { AuditService } from 'src/audit/audit.service';
 import { ScreenQueryDto } from './dto/screen-query.dto';
-import { matches } from 'class-validator';
+import { AiExplainerService } from 'src/ai-explainer/ai-explainer.service';
 
 const PLAN_LIMITS = {
   FREE: 10,
@@ -65,7 +65,7 @@ export class ScreeningService {
   }
 
   async screen(dto: ScreenQueryDto, userId: string, orgId: string) {
-    const queryName = dto.name.trim();
+    const queryName = dto.queryName.trim();
 
     //Plan Limits
 

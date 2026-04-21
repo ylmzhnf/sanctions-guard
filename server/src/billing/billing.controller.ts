@@ -18,7 +18,7 @@ export class BillingController {
   constructor(
     private readonly appSumoService: AppSumoService,
     private readonly lemonSqueezyService: LemonSqueezyService,
-  ) { }
+  ) {}
 
   // 🎟️ APPSUMO KOD BOZDURMA
   @Post('appsumo/redeem')
@@ -41,5 +41,27 @@ export class BillingController {
       signature,
     );
     return { received: true };
+  }
+
+  // 🛒 LEMON SQUEEZY CHECKOUT
+  @Post('checkout')
+  @UseGuards(JwtGuard)
+  async createCheckout(
+    @GetUser('orgId') orgId: string,
+    @Body('priceId') priceId: string,
+  ) {
+    const checkoutUrl = await this.lemonSqueezyService.createCheckoutUrl(
+      orgId,
+      priceId,
+    );
+    return { success: true, url: checkoutUrl };
+  }
+
+  // 🚪 LEMON SQUEEZY PORTAL (Müşteri Fatura Paneli)
+  @Post('portal')
+  @UseGuards(JwtGuard)
+  async getCustomerPortal(@GetUser('orgId') orgId: string) {
+    const portalUrl = await this.lemonSqueezyService.getCustomerPortalUrl(orgId);
+    return { success: true, url: portalUrl };
   }
 }
