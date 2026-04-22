@@ -70,7 +70,14 @@ export class AuthService {
           name: result.user.name,
           role: result.user.role,
           orgId: result.org.id,
-          plan: result.org.plan,
+          organization: {
+            id: result.org.id,
+            name: result.org.name,
+            plan: result.org.plan,
+            queriesUsed: result.org.queriesUsed,
+            queriesLimit: result.org.queriesLimit,
+            isLifetime: result.org.isLifetime,
+          },
         },
       };
     } catch (error) {
@@ -116,9 +123,15 @@ export class AuthService {
         name: user.name,
         role: user.role,
         orgId: user.orgId,
-        plan: user.organization?.plan,
-        queriesUsed: user.organization?.queriesUsed,
-        queriesLimit: user.organization?.queriesLimit,
+        mustChangePassword: user.mustChangePassword,
+        organization: {
+          id: user.organization?.id,
+          name: user.organization?.name,
+          plan: user.organization?.plan,
+          queriesUsed: user.organization?.queriesUsed,
+          queriesLimit: user.organization?.queriesLimit,
+          isLifetime: user.organization?.isLifetime,
+        },
       },
     };
   }
@@ -134,12 +147,13 @@ export class AuthService {
       email: user.email,
       name: user.name,
       role: user.role,
-      org: {
+      organization: {
         id: user.organization?.id,
         name: user.organization?.name,
         plan: user.organization?.plan,
         queriesUsed: user.organization?.queriesUsed,
         queriesLimit: user.organization?.queriesLimit,
+        isLifetime: user.organization?.isLifetime,
       },
     };
   }

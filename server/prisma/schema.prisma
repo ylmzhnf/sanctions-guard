@@ -74,7 +74,8 @@ model Organization {
   billingPeriodEnd DateTime?
 
   isLifetime             Boolean  @default(false)
-
+  
+  aiThreshold    Int      @default(85)
   aiApiKey     String?
   aiProvider   AiProvider @default(OPENAI)
   
@@ -102,6 +103,7 @@ model User {
   id              String   @id @default(cuid())
   email           String   @unique
   passwordHash    String
+  mustChangePassword Boolean @default(false)
   username        String?
   name            String?
   role            Role     @default(USER)

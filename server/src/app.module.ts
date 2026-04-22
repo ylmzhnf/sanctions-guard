@@ -9,6 +9,7 @@ import { UsersModule } from './users/users.module';
 import { AuditModule } from './audit/audit.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { SanctionsSyncModule } from './sanctions-sync/sanctions-sync.module';
+import { SettingdModule } from './settings/settings.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { SanctionsSyncModule } from './sanctions-sync/sanctions-sync.module';
     AuditModule,
     ScheduleModule.forRoot(),
     SanctionsSyncModule,
+    SettingdModule,
   ],
   controllers: [AppController],
   providers: [AppService],

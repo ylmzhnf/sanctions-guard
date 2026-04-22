@@ -28,8 +28,9 @@ function LoginForm() {
       router.replace("/dashboard");
       return;
     }
-    if (searchParams.get("registered") === "1") {
-      setSuccessMessage("Registration successful. Please log in.");
+    const registered = searchParams.get("registered");
+    if (registered === "1" || registered === "true") {
+      setSuccessMessage("Registration successful! Please log in with your credentials.");
     }
   }, [token, router, searchParams, logout]);
 
@@ -45,10 +46,16 @@ function LoginForm() {
 
     try {
       const response = await api.post("/auth/login", { email, password });
+      const { token: accessToken, user } = response.data;
       
-      if (response.data?.token && response.data?.user) {
-        setAuth(response.data.user, response.data.token);
-        window.location.href = "/dashboard";
+      if (accessToken && user) {
+        setAuth(user, accessToken);
+
+        if (user.mustChangePassword) {
+          router.push("/auth/change-password");
+        } else {
+          router.push("/dashboard");
+        }
       }
     } catch (err: any) {
       setError(err.response?.data?.message || "Invalid credentials.");

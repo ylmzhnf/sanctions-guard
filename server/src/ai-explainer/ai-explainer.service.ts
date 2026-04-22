@@ -7,7 +7,7 @@ export interface ExplainInput {
   queryName: string;
   matches: any[];
   riskLevel: string;
-  userApiKey: string;
+  userApiKey?: string;
   provider: AiProvider;
 }
 
@@ -23,13 +23,28 @@ export class AiExplainerService {
   async explain(input: ExplainInput): Promise<string> {
     const userPrompt = `Query Name: "${input.queryName}"\nRisk Level: ${input.riskLevel}\nMatches: ${JSON.stringify(input.matches)}`;
 
+    const apiKey = input.userApiKey;
+
+    if (!apiKey || apiKey.trim() === '') {
+      this.logger.warn(
+        `AI Analysis skipped: No API key found for ${input.provider}`,
+      );
+      return 'AI analysis is currently unavailable because no API key is configured.';
+    }
+
     try {
       if (input.provider === AiProvider.ANTHROPIC) {
-        return await this.requestAnthropic(input.userApiKey, userPrompt);
+        return await this.requestAnthropic(apiKey, userPrompt);
       }
-      return await this.requestOpenAI(input.userApiKey, userPrompt);
-    } catch (err) {
-      this.logger.error(`AI Analysis failed for ${input.provider}`, err);
+      return await this.requestOpenAI(apiKey, userPrompt);
+    } catch (err: any) {
+      this.logger.error(`AI Analysis failed for ${err.message}`);
+      if (err.status === 401) {
+        return '🚨 AI Error: The API Key provided in your Settings is invalid or expired. Please check your OpenAI account.';
+      }
+      if (err.status === 429) {
+        return '🚨 AI Error: You have reached your OpenAI API quota or rate limit. Please check your billing details at OpenAI.';
+      }
       return 'AI explanation is temporarily unavailable. Please check your API key and balance.';
     }
   }

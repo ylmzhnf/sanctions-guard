@@ -18,7 +18,7 @@ export class ScreeningController {
   constructor(private readonly screeningService: ScreeningService) {}
 
   @Get('search')
-  @UseGuards(PlanGuard) 
+  @UseGuards(PlanGuard)
   @UseInterceptors(AuditInterceptor)
   async search(@Query() query: ScreenQueryDto, @GetUser() user: any) {
     const result = await this.screeningService.screen(
@@ -41,9 +41,7 @@ export class ScreeningController {
     const formattedResults = result.matches.map((item) => ({
       ...item,
       score:
-        typeof item.score === 'number'
-          ? Number(item.score.toFixed(2))
-          : item.score,
+        typeof item.score === 'number' ? Math.round(item.score) : item.score,
     }));
 
     return {

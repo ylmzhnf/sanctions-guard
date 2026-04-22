@@ -8,10 +8,9 @@ import { useAuthStore } from "@/lib/store";
 import { ShieldCheck, ArrowRight, Loader2 } from "lucide-react";
 
 export default function RegisterPage() {
-  // Backend DTO (RegisterDto) ve Prisma şemasına tam uyumlu state yapısı
   const [email, setEmail] = useState("");
-  const [name, setName] = useState(""); // Eklenen eksik alan
-  const [orgName, setOrgName] = useState(""); // Eklenen eksik alan
+  const [name, setName] = useState(""); 
+  const [orgName, setOrgName] = useState(""); 
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -29,7 +28,6 @@ export default function RegisterPage() {
       setError("Please fill in all required fields.");
       return false;
     }
-    // DTO'daki MinLength(8) kuralı ile senkronize edildi
     if (password.length < 8) {
       setError("Password must be at least 8 characters.");
       return false;
@@ -49,23 +47,18 @@ export default function RegisterPage() {
 
     setIsLoading(true);
     try {
-      // Backend RegisterDto beklentisine göre gönderim
-      const response = await api.post("/auth/register", { 
-        email, 
-        password, 
-        name, 
-        orgName 
+      await api.post("/auth/register", {
+        email,
+        password,
+        name,
+        orgName,
       });
-
-      // Kayıt sonrası direkt login yapmak SaaS için en iyi UX'tir
-      if (response.data?.token && response.data?.user) {
-        setAuth(response.data.user, response.data.token);
-        router.push("/dashboard");
-      } else {
-        router.push("/auth/login?registered=1");
-      }
+      router.push("/auth/login?registered=true");
     } catch (err: any) {
-      setError(err.response?.data?.message || "Registration failed. Email may already be in use.");
+      setError(
+        err.response?.data?.message ||
+          "Registration failed. Email may already be in use.",
+      );
     } finally {
       setIsLoading(false);
     }
@@ -97,7 +90,9 @@ export default function RegisterPage() {
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-muted-foreground text-xs font-medium mb-1.5 ml-1">Full Name</label>
+              <label className="block text-muted-foreground text-xs font-medium mb-1.5 ml-1">
+                Full Name
+              </label>
               <input
                 type="text"
                 value={name}
@@ -107,7 +102,9 @@ export default function RegisterPage() {
               />
             </div>
             <div>
-              <label className="block text-muted-foreground text-xs font-medium mb-1.5 ml-1">Company</label>
+              <label className="block text-muted-foreground text-xs font-medium mb-1.5 ml-1">
+                Company
+              </label>
               <input
                 type="text"
                 value={orgName}
@@ -119,7 +116,9 @@ export default function RegisterPage() {
           </div>
 
           <div>
-            <label className="block text-muted-foreground text-xs font-medium mb-1.5 ml-1">Work Email</label>
+            <label className="block text-muted-foreground text-xs font-medium mb-1.5 ml-1">
+              Work Email
+            </label>
             <input
               type="email"
               value={email}
@@ -131,7 +130,9 @@ export default function RegisterPage() {
           </div>
 
           <div>
-            <label className="block text-muted-foreground text-xs font-medium mb-1.5 ml-1">Password</label>
+            <label className="block text-muted-foreground text-xs font-medium mb-1.5 ml-1">
+              Password
+            </label>
             <input
               type="password"
               value={password}
@@ -144,7 +145,9 @@ export default function RegisterPage() {
           </div>
 
           <div>
-            <label className="block text-muted-foreground text-xs font-medium mb-1.5 ml-1">Confirm Password</label>
+            <label className="block text-muted-foreground text-xs font-medium mb-1.5 ml-1">
+              Confirm Password
+            </label>
             <input
               type="password"
               value={confirmPassword}
@@ -159,14 +162,21 @@ export default function RegisterPage() {
             disabled={isLoading}
             className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-5 py-3 text-sm font-bold text-primary-foreground transition hover:opacity-90 disabled:opacity-50 mt-2"
           >
-            {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Create account"}
+            {isLoading ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              "Create account"
+            )}
             {!isLoading && <ArrowRight className="w-4 h-4" />}
           </button>
         </form>
 
         <div className="mt-6 text-center text-sm text-muted-foreground">
           Already have an account?{" "}
-          <Link href="/auth/login" className="text-primary hover:underline font-semibold">
+          <Link
+            href="/auth/login"
+            className="text-primary hover:underline font-semibold"
+          >
             Login here
           </Link>
         </div>

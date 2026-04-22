@@ -1,6 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { OfacProvider } from './providers/ofac.provider';
+import { EuProvider } from './providers/eu.provider';
+import { UnProvider } from './providers/un.provider';
+import { UkProvider } from './providers/uk.provider';
 import { SyncProvider } from './interfaces/sync-provider.interface';
 import { Cron } from '@nestjs/schedule';
 import { SyncStatus } from '@prisma/client';
@@ -13,8 +16,16 @@ export class SanctionsSyncService {
   constructor(
     private prisma: PrismaService,
     private ofacProvider: OfacProvider,
+    private euProvider: EuProvider,
+    private unProvider: UnProvider,
+    private ukProvider: UkProvider,
   ) {
-    this.providers = [this.ofacProvider];
+    this.providers = [
+      this.ofacProvider,
+      this.euProvider,
+      this.unProvider,
+      this.ukProvider,
+    ];
   }
 
   @Cron('0 3 * * *')
@@ -47,21 +58,26 @@ export class SanctionsSyncService {
 
           const upsertPromises = batch.map(async (entity) => {
             try {
-              const { remarks, ...rest } = entity;
+              const { remarks, country, ...rest } = entity;
+              const formattedCountry = Array.isArray(country)
+                ? country.join(', ')
+                : country || null;
               const result = await this.prisma.sanctionedEntity.upsert({
                 where: { externalId: entity.externalId },
                 update: {
                   name: entity.name,
                   aliases: entity.aliases,
-                  country: entity.country,
+                  country: formattedCountry,
                   programs: entity.programs,
-                  reason: entity.remarks,
+                  reason: remarks,
                   isActive: true,
                   lastSyncedAt: syncStartTime,
                 },
                 create: {
                   ...rest,
-                  reason: entity.remarks,
+                  externalId: entity.externalId,
+                  country: formattedCountry,
+                  reason: remarks,
                   isActive: true,
                   lastSyncedAt: syncStartTime,
                 },

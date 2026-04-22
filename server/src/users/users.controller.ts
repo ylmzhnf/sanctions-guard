@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Param, Patch, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  UseGuards,
+  Post,
+} from '@nestjs/common';
 import { JwtGuard } from 'src/auth/guard/jwt.guard';
 import { RolesGuard } from 'src/auth/guard/roles.guard';
 import { UsersService } from './users.service';
@@ -23,6 +31,14 @@ export class UsersController {
     return this.userService.editUser(userId, dto);
   }
 
+  @Patch('change-password')
+  changePassword(
+    @GetUser('id') userId: string,
+    @Body('password') newPassword: string,
+  ) {
+    return this.userService.changePassword(userId, newPassword);
+  }
+
   @UseGuards(RolesGuard)
   @Roles(Role.ADMIN)
   @Get('org-members')
@@ -39,5 +55,12 @@ export class UsersController {
     @Body('role') role: Role,
   ) {
     return this.userService.updateUserRole(adminOrgId, targetUserId, role);
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles(Role.ADMIN)
+  @Post('org-members')
+  addUserToOrg(@GetUser('orgId') orgId: string, @Body() dto: EditUserDto) {
+    return this.userService.addUserToOrg(orgId, dto);
   }
 }

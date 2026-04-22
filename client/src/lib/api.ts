@@ -82,6 +82,7 @@ export interface User {
   username?: string | null;
   role: 'USER' | 'ADMIN';
   orgId: string;
+  mustChangePassword?: boolean;
   organization?: Organization;
   org?: Organization;
 }
