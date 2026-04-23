@@ -77,9 +77,9 @@ export class AuditService {
     const payloadObject = {
       id: log.id,
       action: log.action,
-      userId: log.userId,
+      userId: log.userId ?? null,
       orgId: log.orgId,
-      queryId: log.queryId,
+      queryId: log.queryId ?? null,
       metadata: log.metadata,
       createdAt: log.createdAt.toISOString(),
     };

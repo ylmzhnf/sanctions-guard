@@ -3,7 +3,7 @@ import { ParsedEntity, SyncProvider } from '../interfaces/sync-provider.interfac
 import { ListSource } from '@prisma/client';
 import { XMLParser } from 'fast-xml-parser';
 
-const UK_HMT_URL = 'https://ofsiconsoidatedlists.hmtreasury.gov.uk/xml/conlist.xml';
+const UK_HMT_URL = 'https://sanctionslist.fcdo.gov.uk/docs/UK-Sanctions-List.xml';
 
 @Injectable()
 export class UkProvider implements SyncProvider {
@@ -11,44 +11,58 @@ export class UkProvider implements SyncProvider {
   private readonly logger = new Logger(UkProvider.name);
 
   async fetchAndParse(): Promise<ParsedEntity[]> {
-    this.logger.log(`Fetching UK HMT list from ${UK_HMT_URL}`);
+    this.logger.log(`Fetching UK Sanctions List from ${UK_HMT_URL}`);
     try {
       const response = await fetch(UK_HMT_URL);
-      if (!response.ok) throw new Error(`UK HMT fetch failed: ${response.statusText}`);
+      if (!response.ok)
+        throw new Error(`UK Sanctions List fetch failed: ${response.statusText}`);
 
       const xmlData = await response.text();
       const parser = new XMLParser({ ignoreAttributes: true });
       const jsonData = parser.parse(xmlData);
 
       const entities: ParsedEntity[] = [];
-      const financials = this.toArray(jsonData.ArrayOfFinancialSanctionsTarget?.FinancialSanctionsTarget);
+      const designations = this.toArray(jsonData.Designations?.Designation);
 
-      for (const item of financials) {
-        const nameParts = [item.Name1, item.Name2, item.Name3, item.Name4, item.Name5, item.Name6].filter(Boolean);
-        const name = nameParts.length > 0 ? nameParts.join(' ').trim() : 'Unknown';
+      for (const item of designations) {
+        const namesList = this.toArray(item.Names?.Name);
+        const primaryNameObj = namesList.find((n: any) => n.NameType === 'Primary Name') || namesList[0];
         
-        const entityType = item.GroupType === 'Individual' ? 'INDIVIDUAL' : 'ENTITY';
-        const groupId = item.GroupID;
+        // Extract names from Name1 to Name6
+        const extractName = (n: any) => {
+          return [n.Name1, n.Name2, n.Name3, n.Name4, n.Name5, n.Name6]
+            .filter(Boolean)
+            .join(' ')
+            .trim();
+        };
+
+        const primaryName = primaryNameObj ? extractName(primaryNameObj) : 'Unknown';
         
-        const aliasesSet = new Set<string>();
-        if (item.AliasName) aliasesSet.add(item.AliasName);
+        const aliases = namesList
+          .filter((n: any) => n.NameType === 'Alias')
+          .map((n: any) => extractName(n))
+          .filter(Boolean);
+
+        const entityType = item.IndividualEntityShip?.toUpperCase() === 'INDIVIDUAL' 
+          ? 'INDIVIDUAL' 
+          : 'ENTITY';
 
         entities.push({
-          externalId: `UK-${groupId}`,
-          name,
-          aliases: Array.from(aliasesSet),
+          externalId: `UK-${item.UniqueID}`,
+          name: primaryName,
+          aliases,
           entityType,
           listSource: this.sourceName,
-          country: item.Nationality || item.Country || null,
+          country: item.Addresses?.Address?.AddressCountry || null,
           programs: item.RegimeName ? [item.RegimeName] : [],
           remarks: item.OtherInformation || null,
         });
       }
 
-      this.logger.log(`Parsed ${entities.length} entities from UK HMT List.`);
+      this.logger.log(`Parsed ${entities.length} entities from UK Sanctions List.`);
       return entities;
     } catch (error: any) {
-      this.logger.error(`UK HMT Sync Error: ${error.message}`);
+      this.logger.error(`UK Sanctions List Sync Error: ${error.message}`);
       throw error;
     }
   }

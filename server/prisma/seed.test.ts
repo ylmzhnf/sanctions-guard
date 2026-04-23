@@ -1,10 +1,22 @@
 import { PrismaClient } from '@prisma/client';
+import { Pool } from 'pg';
+import { PrismaPg } from '@prisma/adapter-pg';
+import 'dotenv/config';
 
-const prisma = new PrismaClient();
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+});
+
+const adapter = new PrismaPg(pool);
+const prisma = new PrismaClient({ adapter });
+
 if (!process.env.DATABASE_URL) {
-  throw new Error('DATABASE_TEST_URL is not defined');
+  throw new Error('DATABASE_URL is not defined');
 }
 async function main() {
+  await prisma.auditLog.deleteMany();
+  await prisma.screeningMatch.deleteMany();
+  await prisma.screeningQuery.deleteMany();
   await prisma.sanctionedEntity.deleteMany();
   await prisma.sanctionedEntity.createMany({
     data: [
@@ -33,7 +45,7 @@ async function main() {
         country: 'SA',
       },
       {
-        externalId: 'TEST-3',
+        externalId: 'TEST-4',
         name: 'Usama Bin Ladin',
         listSource: 'OTHER',
         entityType: 'Individual',
