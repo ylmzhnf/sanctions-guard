@@ -1,54 +1,54 @@
-import {
-  Injectable,
-  NotFoundException,
-  BadRequestException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { UpdateSettingsDto } from './dto/update-settings.dto';
 
 @Injectable()
 export class SettingsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async getConfig(orgId: string) {
-    const org = await this.prisma.organization.findUnique({
-      where: { id: orgId },
+    const settings = await this.prisma.organizationSettings.findUnique({
+      where: { orgId },
       select: { aiThreshold: true, aiApiKey: true, aiProvider: true },
     });
 
-    if (!org) throw new NotFoundException('Organization not found');
+    if (!settings)
+      throw new NotFoundException('Organization settings not found');
 
-    const rawKey = org.aiApiKey || '';
-    const maskedKey =
-      rawKey.length > 8 ? `••••••••••••••••••••${rawKey.slice(-4)}` : '';
+    const rawKey = settings.aiApiKey || '';
+    const maskedKey = rawKey.length > 8 ? `sk-...${rawKey.slice(-4)}` : '';
 
     return {
-      threshold: org.aiThreshold || 85,
-      hasApiKey: !!rawKey,
+      threshold: settings.aiThreshold ?? 85,
+      provider: settings.aiProvider || 'OPENAI',
+      hasApiKey: !!settings.aiApiKey,
       maskedApiKey: maskedKey,
-      provider: org.aiProvider || 'OPENAI',
     };
   }
 
-  async updateConfig(
-    orgId: string,
-    data: { threshold?: number; aiApiKey?: string },
-  ) {
-    const updateData: any = {};
+  async updateConfig(orgId: string, dto: UpdateSettingsDto) {
+    const aiApiKey =
+      dto.aiApiKey !== undefined
+        ? dto.aiApiKey.trim() === ''
+          ? null
+          : dto.aiApiKey.trim()
+        : undefined;
 
-    if (data.threshold) {
-      updateData.aiThreshold = Number(data.threshold);
-    }
-
-    if (data.aiApiKey !== undefined) {
-      updateData.aiApiKey =
-        data.aiApiKey.trim() === '' ? null : data.aiApiKey.trim();
-    }
-
-    await this.prisma.organization.update({
-      where: { id: orgId },
-      data: updateData,
+    await this.prisma.organizationSettings.upsert({
+      where: { orgId },
+      update: {
+        aiThreshold: dto.threshold,
+        aiProvider: dto.aiProvider,
+        aiApiKey,
+      },
+      create: {
+        orgId,
+        aiThreshold: dto.threshold ?? 85,
+        aiProvider: dto.aiProvider ?? 'OPENAI',
+        aiApiKey: aiApiKey ?? null,
+      },
     });
 
-    return { success: true };
+    return { success: true, message: 'Settings updated successfully' };
   }
 }

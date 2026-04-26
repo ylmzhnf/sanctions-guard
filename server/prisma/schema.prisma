@@ -8,151 +8,20 @@ datasource db {
   extensions = [pg_trgm]
 }
 
-model Organization {
-  id                  String           @id @default(cuid())
-  name                String
-  plan                Plan             @default(FREE)
-  queriesUsed         Int              @default(0)
-  queriesLimit        Int              @default(10)
-  billingPeriodEnd    DateTime?
-  createdAt           DateTime         @default(now())
-  aiApiKey            String?
-  aiProvider          AiProvider       @default(OPENAI)
-  isLifetime          Boolean          @default(false)
-  lemonCustomerId     String?          @unique
-  lemonSubscriptionId String?          @unique
-  aiThreshold         Int              @default(85)
-  appSumoCode         AppSumoCode?
-  auditLogs           AuditLog[]
-  queries             ScreeningQuery[]
-  users               User[]
-}
-
-model AppSumoCode {
-  id     String        @id @default(cuid())
-  code   String        @unique
-  isUsed Boolean       @default(false)
-  usedAt DateTime?
-  orgId  String?       @unique
-  org    Organization? @relation(fields: [orgId], references: [id])
-
-  @@index([code])
-}
-
-model User {
-  id                 String           @id @default(cuid())
-  email              String           @unique
-  username           String?
-  role               Role             @default(USER)
-  createdAt          DateTime         @default(now())
-  name               String?
-  orgId              String?
-  updatedAt          DateTime         @default(now()) @updatedAt
-  passwordHash       String
-  mustChangePassword Boolean          @default(false)
-  logs               AuditLog[]
-  queries            ScreeningQuery[]
-  organization       Organization?    @relation(fields: [orgId], references: [id])
-}
-
-model SanctionedEntity {
-  id           String           @id @default(cuid())
-  externalId   String           @unique
-  aliases      String[]
-  entityType   String
-  listSource   ListSource
-  reason       String?
-  country      String?
-  type         String?
-  issueDate    DateTime?
-  moreInfoUrl  String?
-  createdAt    DateTime         @default(now())
-  name         String
-  isActive     Boolean          @default(true)
-  lastSyncedAt DateTime         @default(now())
-  programs     String[]
-  matches      ScreeningMatch[]
-
-  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin)
-  @@index([listSource, isActive])
-  @@index([isActive])
-}
-
-model ListSyncLog {
-  id             String     @id @default(cuid())
-  source         ListSource
-  status         SyncStatus
-  recordsAdded   Int        @default(0)
-  recordsUpdated Int        @default(0)
-  recordsRemoved Int        @default(0)
-  error          String?
-  syncedAt       DateTime   @default(now())
-}
-
-model ScreeningQuery {
-  id            String           @id @default(cuid())
-  fuzzyMatch    Boolean          @default(true)
-  exactMatch    Boolean          @default(false)
-  status        ScreeningStatus  @default(PENDING)
-  matchedCount  Int              @default(0)
-  riskLevel     RiskLevel?
-  reportUrl     String?
-  createdAt     DateTime         @default(now())
-  userId        String
-  orgId         String
-  aiExplanation String?
-  queryName     String
-  auditLog      AuditLog?
-  matches       ScreeningMatch[]
-  org           Organization     @relation(fields: [orgId], references: [id])
-  user          User             @relation(fields: [userId], references: [id])
-
-  @@index([orgId, createdAt])
-  @@index([userId, createdAt])
-}
-
-model ScreeningMatch {
-  id              String           @id @default(cuid())
-  matchedEntityId String
-  matchedName     String
-  similarityScore Float
-  matchedField    String
-  listSource      ListSource
-  queryId         String
-  entity          SanctionedEntity @relation(fields: [matchedEntityId], references: [id])
-  query           ScreeningQuery   @relation(fields: [queryId], references: [id])
-
-  @@index([queryId])
-  @@index([matchedEntityId])
-}
-
-model AuditLog {
-  id            String          @id @default(cuid())
-  userId        String?
-  action        String
-  createdAt     DateTime        @default(now())
-  integrityHash String
-  metadata      Json
-  orgId         String
-  queryId       String?         @unique
-  org           Organization    @relation(fields: [orgId], references: [id])
-  query         ScreeningQuery? @relation(fields: [queryId], references: [id])
-  user          User?           @relation(fields: [userId], references: [id])
-
-  @@index([orgId, createdAt])
-  @@index([userId])
-}
-
-enum Role {
-  USER
-  ADMIN
-}
 
 enum Plan {
   FREE
   STARTER
   BUSINESS
   ENTERPRISE
+  SELF_HOSTED  
+}
+
+enum Role {
+  USER         
+  ADMIN        
+  SUPER_ADMIN  
+  API_SERVICE  
 }
 
 enum RiskLevel {
@@ -177,6 +46,12 @@ enum ListSource {
   OTHER
 }
 
+enum RequestSource {
+  WEB_APP      
+  API          
+  BULK_UPLOAD  
+}
+
 enum SyncStatus {
   SUCCESS
   PARTIAL
@@ -186,4 +61,186 @@ enum SyncStatus {
 enum AiProvider {
   OPENAI
   ANTHROPIC
+}
+
+
+model Organization {
+  id                   String    @id @default(cuid())
+  name                 String
+
+  
+  plan                 Plan      @default(FREE)
+  stripeCustomerId     String?   @unique
+  stripeSubscriptionId String?   @unique
+  billingPeriodEnd     DateTime?
+  queriesUsed          Int       @default(0)
+  queriesLimit         Int       @default(10)
+  isUnlimited          Boolean   @default(false)
+  
+  createdAt            DateTime  @default(now())
+
+  settings             OrganizationSettings?
+  users                User[]
+  queries              ScreeningQuery[]
+  auditLogs            AuditLog[]
+  apiKeys              ApiKey[]  
+  webhooks             Webhook[] 
+}
+
+model OrganizationSettings {
+  id                 String       @id @default(cuid())
+  orgId              String       @unique
+  organization       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  
+  aiProvider         AiProvider   @default(OPENAI)
+  aiApiKey           String?      
+  aiThreshold        Int          @default(85) 
+  activeListSources  ListSource[] 
+}
+
+model User {
+  id                 String       @id @default(cuid())
+  email              String       @unique
+  username           String?
+  name               String?
+  passwordHash       String
+  mustChangePassword Boolean      @default(false)
+  role               Role         @default(USER)
+  
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  orgId              String?
+  organization       Organization? @relation(fields: [orgId], references: [id])
+  
+  queries            ScreeningQuery[]
+  auditLogs          AuditLog[]
+}
+
+
+model ApiKey {
+  id           String       @id @default(cuid())
+  keyHash      String       @unique  
+  name         String      
+  lastUsedAt   DateTime?
+  isActive     Boolean      @default(true)
+  createdAt    DateTime     @default(now())
+
+  orgId        String
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+}
+
+model Webhook {
+  id           String       @id @default(cuid())
+  url          String       
+  secret       String       
+  events       String[]     
+  isActive     Boolean      @default(true)
+
+  orgId        String
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+}
+
+
+model SanctionedEntity {
+  id           String       @id @default(cuid())
+  externalId   String       @unique 
+  name         String
+  aliases      String[]
+  entityType   String       
+  listSource   ListSource
+  reason       String?      
+  country      String?
+  issueDate    DateTime?
+  programs     String[]     
+  moreInfoUrl  String?
+  
+  isActive     Boolean      @default(true)
+  lastSyncedAt DateTime     @default(now())
+  createdAt    DateTime     @default(now())
+
+  matches      ScreeningMatch[]
+
+  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin)
+  @@index([listSource, isActive])
+}
+
+model ListSyncLog {
+  id             String     @id @default(cuid())
+  source         ListSource
+  status         SyncStatus
+  recordsAdded   Int        @default(0)
+  recordsUpdated Int        @default(0)
+  recordsRemoved Int        @default(0)
+  error          String?
+  syncedAt       DateTime   @default(now())
+}
+
+
+model ScreeningQuery {
+  id            String          @id @default(cuid())
+  queryName     String          
+  status        ScreeningStatus @default(PENDING)
+  riskLevel     RiskLevel?
+  matchCount    Int             @default(0)
+  
+  fuzzyMatch    Boolean         @default(true)
+  exactMatch    Boolean         @default(false)
+  
+  aiExplanation String?         
+  osintResults  Json?           
+  reportUrl     String?         
+  source        RequestSource   @default(WEB_APP) 
+  
+  createdAt     DateTime        @default(now())
+
+  userId        String?         
+  user          User?           @relation(fields: [userId], references: [id])
+  
+  orgId         String
+  org           Organization    @relation(fields: [orgId], references: [id])
+
+  matches       ScreeningMatch[]
+  auditLog      AuditLog?
+
+  @@index([orgId, createdAt])
+}
+
+model ScreeningMatch {
+  id              String           @id @default(cuid())
+  matchedEntityId String
+  matchedName     String
+  similarityScore Float            
+  matchedField    String           
+  listSource      ListSource
+
+  entity          SanctionedEntity @relation(fields: [matchedEntityId], references: [id])
+  queryId         String
+  query           ScreeningQuery   @relation(fields: [queryId], references: [id], onDelete: Cascade)
+
+  @@index([queryId])
+  @@index([matchedEntityId])
+}
+
+
+model AuditLog {
+  id            String          @id @default(cuid())
+  action        String          
+  actorId       String          
+  metadata      Json            
+  integrityHash String          
+  
+  createdAt     DateTime        @default(now())
+
+  orgId         String
+  org           Organization    @relation(fields: [orgId], references: [id])
+  
+  userId        String?         
+  user          User?           @relation(fields: [userId], references: [id])
+
+  queryId       String?         @unique
+  query         ScreeningQuery? @relation(fields: [queryId], references: [id])
+
+  @@index([orgId, createdAt])
+  @@index([actorId])
 }

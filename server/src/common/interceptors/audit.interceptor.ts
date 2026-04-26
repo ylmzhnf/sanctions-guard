@@ -35,7 +35,7 @@ export class AuditInterceptor implements NestInterceptor {
 
           this.auditService
             .log({
-              userId: user.id,
+              actorId: user.id,
               orgId: user.orgId,
               action: 'SCREENING_SEARCH',
               metadata: {

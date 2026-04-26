@@ -2,24 +2,28 @@ import {
   Injectable,
   ConflictException,
   UnauthorizedException,
+  Logger,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
+import { AuditService } from '../audit/audit.service';
 import { Prisma, Role } from '@prisma/client';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
-    private prisma: PrismaService,
-    private jwtService: JwtService,
+    private readonly prisma: PrismaService,
+    private readonly jwtService: JwtService,
+    private readonly audit: AuditService,
   ) {}
 
   async register(dto: RegisterDto) {
     const normalizedEmail = dto.email.toLowerCase().trim();
-
     const existing = await this.prisma.user.findUnique({
       where: { email: normalizedEmail },
     });
@@ -27,7 +31,6 @@ export class AuthService {
     if (existing) {
       throw new ConflictException('This email address is already in use.');
     }
-
     const passwordHash = await bcrypt.hash(dto.password, 12);
 
     try {
@@ -55,6 +58,13 @@ export class AuthService {
         return { user, org };
       });
 
+      await this.audit.log({
+        action: 'USER_REGISTERED',
+        actorId: result.user.id,
+        orgId: result.org.id,
+        metadata: { email: normalizedEmail, orgName: result.org.name },
+      });
+
       const token = this.signToken(
         result.user.id,
         result.user.email,
@@ -64,21 +74,7 @@ export class AuthService {
 
       return {
         token,
-        user: {
-          id: result.user.id,
-          email: result.user.email,
-          name: result.user.name,
-          role: result.user.role,
-          orgId: result.org.id,
-          organization: {
-            id: result.org.id,
-            name: result.org.name,
-            plan: result.org.plan,
-            queriesUsed: result.org.queriesUsed,
-            queriesLimit: result.org.queriesLimit,
-            isLifetime: result.org.isLifetime,
-          },
-        },
+        user: this.formatUserResponse(result.user, result.org),
       };
     } catch (error) {
       if (
@@ -94,7 +90,6 @@ export class AuthService {
   async login(dto: LoginDto) {
     const normalizedEmail = dto.email.toLowerCase().trim();
     const authErrorMsg = 'Invalid email or password.';
-
     const user = await this.prisma.user.findUnique({
       where: { email: normalizedEmail },
       include: { organization: true },
@@ -106,33 +101,28 @@ export class AuthService {
 
     const valid = await bcrypt.compare(dto.password, user.passwordHash);
     if (!valid) {
+      this.logger.warn(`Failed login attempt for email: ${normalizedEmail}`);
       throw new UnauthorizedException(authErrorMsg);
     }
 
-    if (!user.orgId) {
-      throw new UnauthorizedException('User has no organization assigned');
+    if (!user.orgId || !user.organization) {
+      throw new UnauthorizedException(
+        'User is not linked to any organization.',
+      );
     }
+
+    await this.audit.log({
+      action: 'USER_LOGIN',
+      actorId: user.id,
+      orgId: user.orgId,
+      metadata: { ip: 'logged_session' },
+    });
 
     const token = this.signToken(user.id, user.email, user.orgId, user.role);
 
     return {
       token,
-      user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        role: user.role,
-        orgId: user.orgId,
-        mustChangePassword: user.mustChangePassword,
-        organization: {
-          id: user.organization?.id,
-          name: user.organization?.name,
-          plan: user.organization?.plan,
-          queriesUsed: user.organization?.queriesUsed,
-          queriesLimit: user.organization?.queriesLimit,
-          isLifetime: user.organization?.isLifetime,
-        },
-      },
+      user: this.formatUserResponse(user, user.organization),
     };
   }
 
@@ -142,20 +132,7 @@ export class AuthService {
       include: { organization: true },
     });
 
-    return {
-      id: user.id,
-      email: user.email,
-      name: user.name,
-      role: user.role,
-      organization: {
-        id: user.organization?.id,
-        name: user.organization?.name,
-        plan: user.organization?.plan,
-        queriesUsed: user.organization?.queriesUsed,
-        queriesLimit: user.organization?.queriesLimit,
-        isLifetime: user.organization?.isLifetime,
-      },
-    };
+    return this.formatUserResponse(user, user.organization!);
   }
 
   private signToken(
@@ -165,5 +142,23 @@ export class AuthService {
     role: string,
   ): string {
     return this.jwtService.sign({ sub: userId, email, orgId, role });
+  }
+
+  private formatUserResponse(user: any, org: any) {
+    return {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+      mustChangePassword: user.mustChangePassword,
+      org: {
+        id: org.id,
+        name: org.name,
+        plan: org.plan,
+        queriesUsed: org.queriesUsed,
+        queriesLimit: org.queriesLimit,
+        isLifetime: org.isLifetime,
+      },
+    };
   }
 }

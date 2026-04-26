@@ -4,11 +4,20 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditEntryDto } from './dto/audit-entry.dto';
 import * as crypto from 'crypto';
 
+export interface AuditInput {
+  action: string;
+  actorId: string;
+  orgId: string;
+  queryId?: string | null;
+  metadata: Record<string, any>;
+}
 @Injectable()
 export class AuditService {
   private readonly logger = new Logger(AuditService.name);
+
   private readonly hmacSecret =
     process.env.AUDIT_SECRET || 'fallback-audit-secret-key-123';
+
   constructor(private prisma: PrismaService) {}
 
   private canonicalStringify(obj: any): string {
@@ -22,7 +31,7 @@ export class AuditService {
     }
     const sortedKeys = Object.keys(obj).sort();
     const result: string[] = [];
-    
+
     for (const key of sortedKeys) {
       result.push(
         `${JSON.stringify(key)}:${this.canonicalStringify(obj[key])}`,
@@ -34,11 +43,12 @@ export class AuditService {
   async log(data: AuditEntryDto): Promise<void> {
     const id = crypto.randomUUID();
     const timestamp = new Date().toISOString();
+    const actorId = data.actorId ?? 'SYSTEM';
 
     const payloadObject = {
       id,
       action: data.action,
-      userId: data.userId || null,
+      actorId,
       orgId: data.orgId,
       queryId: data.queryId || null,
       metadata: data.metadata,
@@ -56,10 +66,10 @@ export class AuditService {
         data: {
           id,
           action: data.action,
-          userId: data.userId,
+          actorId,
           orgId: data.orgId,
           queryId: data.queryId,
-          metadata: data.metadata as Prisma.InputJsonValue,
+          metadata: data.metadata,
           integrityHash,
           createdAt: new Date(timestamp),
         },
@@ -77,7 +87,7 @@ export class AuditService {
     const payloadObject = {
       id: log.id,
       action: log.action,
-      userId: log.userId ?? null,
+      actorId: log.actorId,
       orgId: log.orgId,
       queryId: log.queryId ?? null,
       metadata: log.metadata,
@@ -101,35 +111,40 @@ export class AuditService {
     return { valid, log };
   }
 
-  async getAuditLogs(orgId: string, page = 1, limit = 50) {
+  async getOrgLogs(orgId: string, page = 1, limit = 50) {
+    const skip = (page - 1) * limit;
+
     const [logs, total] = await Promise.all([
       this.prisma.auditLog.findMany({
         where: { orgId },
         orderBy: { createdAt: 'desc' },
-        skip: (page - 1) * limit,
+        skip,
         take: limit,
         include: {
-          user: {
-            select: { email: true, name: true }, 
-          },
-          query: {
-            select: { queryName: true, riskLevel: true, status: true },
-          },
+          user: { select: { email: true, name: true } },
+          query: { select: { queryName: true, riskLevel: true } },
         },
       }),
       this.prisma.auditLog.count({ where: { orgId } }),
     ]);
-    return { logs, total, page, pages: Math.ceil(total / limit) };
+
+    return {
+      logs,
+      total,
+      page,
+      pages: Math.ceil(total / limit),
+    };
   }
-  async updateLog() {
+
+  async update() {
     throw new ForbiddenException(
-      'CRITICAL: Audit logs are immutable and cannot be updated.',
+      'Audit logs are immutable and cannot be modified.',
     );
   }
 
-  async deleteLog() {
+  async delete() {
     throw new ForbiddenException(
-      'CRITICAL: Audit logs are immutable and cannot be deleted.',
+      'Audit logs are immutable and cannot be deleted.',
     );
   }
 }

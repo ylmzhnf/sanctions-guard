@@ -3,7 +3,6 @@ import {
   NotFoundException,
   ForbiddenException,
   ConflictException,
-  BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { EditUserDto } from './dto/edit-user.dto';
@@ -12,7 +11,7 @@ import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class UsersService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async getUser(userId: string) {
     const user = await this.prisma.user.findUnique({
@@ -20,47 +19,28 @@ export class UsersService {
       select: {
         id: true,
         email: true,
-        username: true,
         name: true,
         role: true,
         orgId: true,
-        mustChangePassword: true,
-        organization: {
-          select: {
-            id: true,
-            name: true,
-            plan: true,
-            queriesUsed: true,
-            queriesLimit: true,
-            isLifetime: true,
-          },
-        },
+        organization: { select: { name: true, plan: true } },
       },
     });
-
     if (!user) throw new NotFoundException('User not found');
     return user;
   }
 
   async editUser(userId: string, dto: EditUserDto) {
     const { password, ...rest } = dto;
-    const updateData: any = { ...rest };
+    const data: any = { ...rest };
 
     if (password) {
-      const salt = await bcrypt.genSalt(12);
-      updateData.passwordHash = await bcrypt.hash(password, salt);
+      data.passwordHash = await bcrypt.hash(password, 12);
     }
+
     return this.prisma.user.update({
       where: { id: userId },
-      data: updateData,
-      select: {
-        id: true,
-        email: true,
-        username: true,
-        name: true,
-        role: true,
-        mustChangePassword: true,
-      },
+      data,
+      select: { id: true, email: true, name: true, role: true },
     });
   }
 
@@ -70,12 +50,33 @@ export class UsersService {
       select: {
         id: true,
         email: true,
-        username: true,
         name: true,
         role: true,
-        mustChangePassword: true,
+        createdAt: true,
       },
       orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async addUserToOrg(orgId: string, dto: EditUserDto) {
+    const email = dto.email?.toLowerCase().trim();
+    if (!email || !dto.password)
+      throw new ConflictException('Email and password required');
+
+    const existing = await this.prisma.user.findUnique({ where: { email } });
+    if (existing) throw new ConflictException('Email already registered');
+
+    const passwordHash = await bcrypt.hash(dto.password, 12);
+
+    return this.prisma.user.create({
+      data: {
+        email,
+        passwordHash,
+        name: dto.name,
+        role: dto.role || Role.USER,
+        orgId: orgId,
+        mustChangePassword: true,
+      },
     });
   }
 
@@ -86,7 +87,7 @@ export class UsersService {
 
     if (!targetUser || targetUser.orgId !== adminOrgId) {
       throw new ForbiddenException(
-        'You can only manage users within your own organization.',
+        'Security Alert: You can only manage users within your own organization.',
       );
     }
 
@@ -95,57 +96,13 @@ export class UsersService {
       data: { role },
     });
   }
-  async addUserToOrg(orgId: string, dto: EditUserDto) {
-    if (!dto.email) {
-      throw new BadRequestException('Email is required.');
-    }
-    if (!dto.password) {
-      throw new BadRequestException('Password is required.');
-    }
-
-    const email = dto.email.toLowerCase().trim();
-    const password = dto.password;
-
-    const existing = await this.prisma.user.findUnique({
-      where: { email },
-    });
-
-    if (existing) {
-      throw new ConflictException('This email is already registered.');
-    }
-
-    const salt = await bcrypt.genSalt(12);
-    const passwordHash = await bcrypt.hash(password, salt);
-
-    return this.prisma.user.create({
-      data: {
-        email,
-        name: dto.name,
-        username: dto.username,
-        passwordHash: passwordHash,
-        role: dto.role || Role.USER,
-        orgId: orgId,
-        mustChangePassword: true,
-      },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        role: true,
-      },
-    });
-  }
 
   async changePassword(userId: string, newPassword: string) {
-    const salt = await bcrypt.genSalt(12);
-    const passwordHash = await bcrypt.hash(newPassword, salt);
-
-    return this.prisma.user.update({
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+    await this.prisma.user.update({
       where: { id: userId },
-      data: {
-        passwordHash,
-        mustChangePassword: false,
-      },
+      data: { passwordHash, mustChangePassword: false },
     });
+    return { success: true };
   }
 }

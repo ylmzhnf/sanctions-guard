@@ -1,26 +1,31 @@
-import { Controller, Get, Param, Query, UseGuards, Req } from '@nestjs/common';
-import { JwtGuard } from 'src/auth/guard/jwt.guard';
+import {
+  Controller,
+  Get,
+  Param,
+  Query,
+  UseGuards,
+  ParseIntPipe,
+} from '@nestjs/common';
 import { AuditService } from './audit.service';
+import { JwtGuard } from '../auth/guard/jwt.guard';
+import { GetUser } from '../auth/decorator/get-user.decorator';
 
 @UseGuards(JwtGuard)
 @Controller('audit')
 export class AuditController {
-  constructor(private auditService: AuditService) {}
+  constructor(private readonly auditService: AuditService) {}
 
   @Get('logs')
   async getLogs(
-    @Req() req: any,
+    @GetUser('orgId') orgId: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
   ) {
-    const pageNum = page ? parseInt(page) : 1;
-    const limitNum = limit ? parseInt(limit) : 50;
+    const pageNum = page ? parseInt(page, 10) : 1;
+    const limitNum = limit ? parseInt(limit, 10) : 50;
 
-    const result = await this.auditService.getAuditLogs(
-      req.user.orgId,
-      pageNum,
-      limitNum,
-    );
+    const result = await this.auditService.getOrgLogs(orgId, pageNum, limitNum);
+
     return {
       success: true,
       data: result.logs,
@@ -34,15 +39,15 @@ export class AuditController {
 
   @Get('verify/:id')
   async verify(@Param('id') id: string) {
-    const verification = await this.auditService.verifyLog(id);
+    const { valid, log } = await this.auditService.verifyLog(id);
 
     return {
       success: true,
-      isValid: verification.valid,
-      log: verification.log,
-      message: verification.valid
-        ? 'Log integrity has been verified. The data is valid.'
-        : 'WARNING: Log integrity verification failed! The data may have been tampered with or corrupted.',
+      isValid: valid,
+      log,
+      message: valid
+        ? 'Log integrity has been verified. The data is authentic.'
+        : 'CRITICAL WARNING: Log integrity verification failed! This record may have been tampered with.',
     };
   }
 }

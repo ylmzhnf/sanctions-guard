@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, Suspense } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import {
   Search,
   BrainCircuit,
@@ -12,9 +12,12 @@ import {
   Filter,
   CheckCircle2,
   ShieldAlert,
+  Download,
+  Newspaper,
+  Globe,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import api from "@/lib/api";
+import api from "@/lib/api"; 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
 
@@ -31,53 +34,55 @@ const formatScore = (score: number | string) => {
   return `${Math.round(num)}%`;
 };
 
-type Match = {
-  id: string;
-  matchedName: string;
-  score: number;
-  listSource: string;
-  matchedField: string;
-};
-
 type ScreeningResult = {
   success: boolean;
   count: number;
+  queryId?: string;
   riskLevel: string;
   aiExplanation?: string;
-  data: Match[];
-  queryId?: string;
+  data: Array<{
+    id: string;
+    matchedName: string;
+    score: number;
+    listSource: string;
+    matchedField: string;
+  }>;
+  osintResults?: {
+    news: Array<{ title: string; link: string; source: string; date: string }>;
+    social: Array<{ title: string; link: string; platform: string }>;
+  };
 };
 
-// Error state'i için özel tip tanımlaması
 type ErrorState = {
   message: string;
   type: "LIMIT" | "GENERAL";
 } | null;
 
-export default function SearchPage() {
+function SearchContent() {
+  const searchParams = useSearchParams();
   const router = useRouter();
-  
-  // DÜZELTME 1: queryClient tanımlandı! Arama başarılı olunca çökmesini engeller.
   const queryClient = useQueryClient();
 
-  const [name, setName] = useState("");
+  const [name, setName] = useState(searchParams.get("name") || "");
   const [entityType, setEntityType] = useState("");
-  
-  // DÜZELTME 2: Error state'i obje tipine çevrildi
   const [error, setError] = useState<ErrorState>(null);
+
+  useEffect(() => {
+    const urlName = searchParams.get("name");
+    if (urlName && !searchMutation.data && !searchMutation.isPending) {
+      searchMutation.mutate({ name: urlName, type: "" });
+    }
+  }, []);
 
   const searchMutation = useMutation({
     mutationFn: async (params: { name: string; type: string }) => {
-      const response = await api.get("/screening/search", {
-        params: {
-          queryName: params.name,
-          entityType: params.type || undefined,
-        },
+      const response = await api.post("/screening/screen", {
+        queryName: params.name,
+        entityType: params.type || undefined,
       });
-      return response.data;
+      return response.data as ScreeningResult;
     },
     onSuccess: () => {
-      // Dashboard'daki limit ve log sayılarını anında günceller
       queryClient.invalidateQueries({ queryKey: ["current-user-status"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard-logs"] });
       queryClient.invalidateQueries({ queryKey: ["org-status"] });
@@ -85,7 +90,7 @@ export default function SearchPage() {
     onError: (err: any) => {
       if (err.response?.status === 403) {
         setError({
-          message: "You have reached your monthly screening limit. Please upgrade your plan to continue.",
+          message: "You have reached your screening limit. Please upgrade your plan.",
           type: "LIMIT",
         });
       } else {
@@ -100,21 +105,38 @@ export default function SearchPage() {
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
-    
-    setError(null); // Yeni arama yaparken eski hatayı temizle
+
+    setError(null);
+    window.history.replaceState(null, "", `?name=${encodeURIComponent(name.trim())}`);
     searchMutation.mutate({ name: name.trim(), type: entityType });
   };
 
-  const isSearching = searchMutation.isPending;
-  const result = searchMutation.data as ScreeningResult | undefined;
+  const handleDownloadReport = async (queryId: string) => {
+    try {
+      const response = await api.get(`/screening/download-report/${queryId}`, {
+        responseType: "blob",
+      });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", `screening-report-${queryId}.pdf`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch (err) {
+      console.error("Download failed", err);
+    }
+  };
 
-  // Rozet (Badge) varyantları için yardımcı fonksiyon
+  const isSearching = searchMutation.isPending;
+  const result = searchMutation.data;
+
   const getRiskConfig = (risk: string) => {
     const level = risk?.toUpperCase();
     if (["CRITICAL", "EXACT MATCH", "HIGH"].includes(level))
       return {
         color: "text-destructive",
-        variant: "critical", // Shadcn UI Badge varyantı
+        variant: "destructive",
         bg: "bg-destructive/10 border-destructive/30",
       };
     if (level === "MEDIUM")
@@ -126,12 +148,12 @@ export default function SearchPage() {
     if (level === "LOW")
       return {
         color: "text-blue-500",
-        variant: "default",
+        variant: "secondary",
         bg: "bg-blue-500/10 border-blue-500/30",
       };
     return {
       color: "text-emerald-500",
-      variant: "default",
+      variant: "outline",
       bg: "bg-emerald-500/10 border-emerald-500/30",
     };
   };
@@ -190,16 +212,6 @@ export default function SearchPage() {
               {isSearching ? "Screening..." : "Screen Now"}
             </button>
           </div>
-
-          <div className="flex items-center justify-between mt-2">
-            <p className="text-xs text-muted-foreground">
-              Include full name and middle names where possible for best accuracy.
-            </p>
-            <div className="hidden md:flex items-center space-x-4 text-[10px] text-muted-foreground font-bold uppercase tracking-widest">
-              <span className="flex items-center"><BrainCircuit className="w-3 h-3 mr-1 text-purple-500" /> AI Scoring</span>
-              <span className="flex items-center"><Lock className="w-3 h-3 mr-1 text-emerald-500" /> Audit Logged</span>
-            </div>
-          </div>
         </form>
 
         {error && (
@@ -228,20 +240,27 @@ export default function SearchPage() {
       {result && riskConfig && (
         <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-500">
           
-          {/* TEMİZ SONUÇ EKRANI */}
           {result.riskLevel === "CLEAR" || result.count === 0 ? (
-            <div className="bg-card border border-border rounded-3xl p-12 text-center shadow-lg">
+            <div className="bg-card border border-border rounded-3xl p-12 text-center shadow-lg relative">
               <div className="bg-emerald-500/10 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 border border-emerald-500/20 shadow-inner">
                 <CheckCircle2 className="w-10 h-10 text-emerald-500" />
               </div>
               <h2 className="text-2xl font-bold text-foreground mb-2">No Sanctions Matches</h2>
-              <p className="text-muted-foreground text-sm max-w-sm mx-auto">
+              <p className="text-muted-foreground text-sm max-w-sm mx-auto mb-6">
                 No records were found for <strong>"{name}"</strong> across international watchlists.
               </p>
+              
+              {result.queryId && (
+                <button
+                  onClick={() => handleDownloadReport(result.queryId!)}
+                  className="mx-auto flex items-center gap-2 bg-secondary text-secondary-foreground hover:bg-secondary/80 px-4 py-2 rounded-lg text-sm font-semibold transition-all"
+                >
+                  <Download className="w-4 h-4" /> Download Clear Report
+                </button>
+              )}
             </div>
           ) : (
             <>
-              {/* RİSK BULUNDU EKRANI */}
               <div className={clsx("rounded-3xl p-6 border-2 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-xl", riskConfig.bg)}>
                 <div className="flex items-center gap-4">
                   <div className={clsx("w-3 h-3 rounded-full animate-pulse shadow-[0_0_12px]", `bg-${riskConfig.color.split("-")[1]}-500`)} />
@@ -250,12 +269,22 @@ export default function SearchPage() {
                     <p className="text-sm text-muted-foreground">Found {result.count} records matching your query.</p>
                   </div>
                 </div>
-                <Badge variant={riskConfig.variant as any} className="px-6 py-2 uppercase text-xs font-black tracking-widest shadow-md">
-                  {result.riskLevel} RISK
-                </Badge>
+                
+                <div className="flex items-center gap-4">
+                  {result.queryId && (
+                     <button
+                        onClick={() => handleDownloadReport(result.queryId!)}
+                        className="flex items-center gap-2 bg-background border border-border hover:bg-secondary/50 px-4 py-2 rounded-lg text-sm font-bold transition-all shadow-sm"
+                      >
+                       <Download className="w-4 h-4" /> PDF Report
+                     </button>
+                  )}
+                  <Badge variant={riskConfig.variant as any} className="px-6 py-2 uppercase text-xs font-black tracking-widest shadow-md">
+                    {result.riskLevel} RISK
+                  </Badge>
+                </div>
               </div>
 
-              {/* AI ANALİZİ */}
               {result.aiExplanation && (
                 <div className="bg-card rounded-3xl border border-border overflow-hidden shadow-xl">
                   <div className="p-5 border-b border-border bg-primary/5 flex items-center gap-2">
@@ -266,18 +295,52 @@ export default function SearchPage() {
                     <p className="text-foreground/90 text-sm leading-relaxed whitespace-pre-wrap italic">
                       "{result.aiExplanation}"
                     </p>
-                    <div className="mt-8 pt-6 border-t border-border flex items-start gap-3 opacity-60">
-                      <AlertCircle className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" />
-                      <p className="text-[10px] text-muted-foreground leading-normal">
-                        AI-generated insights are for informational context only and do not constitute legal advice. 
-                        Compliance officers must manually verify all HIGH and CRITICAL matches.
-                      </p>
+                  </div>
+                </div>
+              )}
+
+              {result.osintResults && (result.osintResults.news?.length > 0 || result.osintResults.social?.length > 0) && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="bg-card rounded-2xl border border-border p-6 shadow-lg">
+                    <h2 className="font-bold text-foreground mb-4 flex items-center gap-2">
+                      <Newspaper className="w-5 h-5 text-blue-500" /> Recent News
+                    </h2>
+                    <div className="space-y-4">
+                      {result.osintResults.news.slice(0, 3).map((item, i) => (
+                        <div key={i} className="group">
+                          <a href={item.link} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-blue-600 hover:underline line-clamp-2">
+                            {item.title}
+                          </a>
+                          <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
+                            <span className="font-medium">{item.source}</span>
+                            <span>•</span>
+                            <span>{item.date}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="bg-card rounded-2xl border border-border p-6 shadow-lg">
+                    <h2 className="font-bold text-foreground mb-4 flex items-center gap-2">
+                      <Globe className="w-5 h-5 text-purple-500" /> Social & Web
+                    </h2>
+                    <div className="space-y-4">
+                      {result.osintResults.social.slice(0, 3).map((item, i) => (
+                        <div key={i} className="group">
+                          <a href={item.link} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-blue-600 hover:underline line-clamp-2">
+                            {item.title}
+                          </a>
+                          <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
+                            <span className="bg-secondary px-2 py-0.5 rounded text-[10px] uppercase font-bold tracking-wider">{item.platform}</span>
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 </div>
               )}
 
-              {/* DETAYLI TABLO */}
               {result.data && result.data.length > 0 && (
                 <div className="bg-card rounded-2xl border border-border overflow-hidden shadow-lg">
                   <div className="p-5 border-b border-border bg-muted/20">
@@ -302,7 +365,7 @@ export default function SearchPage() {
                             <tr key={m.id} className="hover:bg-secondary/30 transition-colors">
                               <td className="px-6 py-4 font-bold text-foreground text-sm">{m.matchedName}</td>
                               <td className="px-6 py-4 text-center">
-                                <Badge variant={isHighMatch ? "critical" : "warning"} className="font-mono text-xs shadow-sm">
+                                <Badge variant={isHighMatch ? "destructive" : "secondary"} className="font-mono text-xs shadow-sm">
                                   {formatScore(m.score)}
                                 </Badge>
                               </td>
@@ -325,5 +388,13 @@ export default function SearchPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function SearchPage() {
+  return (
+    <Suspense fallback={<div className="p-8 flex justify-center items-center h-64"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>}>
+      <SearchContent />
+    </Suspense>
   );
 }

@@ -2,24 +2,26 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { AuditService } from './audit.service';
 import { PrismaService } from '../prisma/prisma.service';
 
-describe('AuditService (HMAC Integrity)', () => {
+describe('AuditService (HMAC Integrity & Security)', () => {
   let service: AuditService;
-  let storedData: any;
+  let dbMock: any = null; 
+
 
   const mockPrisma = {
     auditLog: {
       create: jest.fn().mockImplementation(({ data }) => {
-        storedData = { ...data };
-        return Promise.resolve(storedData);
+        dbMock = { ...data };
+        return Promise.resolve(dbMock);
       }),
       findUniqueOrThrow: jest.fn().mockImplementation(() =>
-        Promise.resolve(storedData),
+        Promise.resolve(dbMock),
       ),
     },
   };
 
   beforeEach(async () => {
-    process.env.HMAC_SECRET = 'super-secret-key-for-testing';
+    process.env.AUDIT_LOG_SECRET = 'test-secret-key-12345';
+    
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AuditService,
@@ -28,58 +30,73 @@ describe('AuditService (HMAC Integrity)', () => {
     }).compile();
 
     service = module.get<AuditService>(AuditService);
+    dbMock = null; 
   });
 
   it('should generate a 64-character SHA-256 integrity hash', async () => {
     await service.log({
       action: 'SCREENING_PERFORMED',
-      userId: 'user-1',
-      orgId: 'org-1',
-      metadata: { target: 'Roman Abramovich' },
+      actorId: 'user-uuid-1',
+      orgId: 'org-uuid-1',
+      metadata: { target: 'Roman Abramovich', risk: 'HIGH' },
     });
 
-    expect(storedData.integrityHash).toBeDefined();
-    expect(storedData.integrityHash).toHaveLength(64); 
+    expect(dbMock.integrityHash).toBeDefined();
+    expect(dbMock.integrityHash).toHaveLength(64);
   });
 
-  it('should verify original logs as valid', async () => {
+  it('should verify original (untampered) logs as valid', async () => {
     await service.log({
-      action: 'LOGIN_ATTEMPT',
-      userId: 'user-1',
-      orgId: 'org-1',
-      metadata: {},
+      action: 'LOGIN_SUCCESS',
+      actorId: 'user-uuid-1',
+      orgId: 'org-uuid-1',
+      metadata: { ip: '127.0.0.1' },
     });
 
-    const { valid } = await service.verifyLog(storedData.id);
+    const { valid } = await service.verifyLog(dbMock.id);
     expect(valid).toBe(true);
   });
 
-  it('should detect tampering when data is modified', async () => {
+  it('should detect tampering when metadata is modified', async () => {
     await service.log({
-      action: 'CRITICAL_MATCH_FOUND',
-      userId: 'user-1',
+      action: 'RISK_LEVEL_CHANGED',
+      actorId: 'admin-1',
       orgId: 'org-1',
-      metadata: { risk: 'HIGH' }
+      metadata: { from: 'HIGH', to: 'LOW' }
     });
 
-    storedData.metadata = { risk: 'LOW' }; 
-
-    const { valid } = await service.verifyLog(storedData.id);
     
+    dbMock.metadata = { from: 'HIGH', to: 'CRITICAL' }; 
+
+    const { valid } = await service.verifyLog(dbMock.id);
     expect(valid).toBe(false);
   });
 
-  it('should detect tampering when hash itself is changed', async () => {
+  it('should detect tampering when the hash itself is modified', async () => {
     await service.log({ 
       action: 'DELETE_QUERY', 
-      userId: 'u-1', 
+      actorId: 'u-1', 
       orgId: 'o-1',
-      metadata: {},
+      metadata: { queryId: 'q-100' },
     });
 
-    storedData.integrityHash = 'fake-hash-value';
+    dbMock.integrityHash = 'a'.repeat(64);
 
-    const { valid } = await service.verifyLog(storedData.id);
+    const { valid } = await service.verifyLog(dbMock.id);
     expect(valid).toBe(false);
+  });
+
+  it('should maintain validity even if metadata keys are reordered (Canonical Stringify test)', async () => {
+    await service.log({
+      action: 'TEST_SORTING',
+      actorId: 'u-1',
+      orgId: 'o-1',
+      metadata: { z: 1, a: 2 },
+    });
+
+    dbMock.metadata = { a: 2, z: 1 };
+
+    const { valid } = await service.verifyLog(dbMock.id);
+    expect(valid).toBe(true);
   });
 });

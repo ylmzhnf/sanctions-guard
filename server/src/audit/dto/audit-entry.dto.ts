@@ -1,11 +1,16 @@
-import { IsString, IsObject, IsOptional, IsNotEmpty } from 'class-validator';
+import {
+  IsString,
+  IsObject,
+  IsOptional,
+  IsNotEmpty,
+  IsUUID,
+} from 'class-validator';
 
 export class AuditEntryDto {
-  @IsString()
+  @IsUUID()
   @IsOptional()
-  userId?: string;
-
-  @IsString()
+  actorId?: string;
+  @IsUUID()
   @IsNotEmpty()
   orgId: string;
 
@@ -14,9 +19,10 @@ export class AuditEntryDto {
   action: string;
 
   @IsObject()
-  metadata: Record<string, unknown>;
+  @IsNotEmpty()
+  metadata: Record<string, any>;
 
-  @IsString()
+  @IsUUID()
   @IsOptional()
-  queryId?: string;
+  queryId?: string | null;
 }

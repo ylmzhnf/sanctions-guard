@@ -80,19 +80,22 @@ describe('ScreeningService (Integration)', () => {
   });
 
   it('should perform fuzzy match and create a secure audit log', async () => {
-    const result = await service.screen({ queryName: 'Vladimir Puten' }, userId, orgId);
+    const result = await service.screen(
+      { queryName: 'Vladimir Puten' },
+      userId,
+      orgId,
+    );
 
     expect(result.matches.length).toBeGreaterThan(0);
     expect(result.matches[0].matchedName).toBe('Vladimir Putin');
     expect(result.riskLevel).toBe(RiskLevel.HIGH);
 
-    // Verify Audit Log
+    
     const logs = await prisma.auditLog.findMany({
       where: { userId },
     });
 
-    
-    expect(logs.length).toBe(0); 
+    expect(logs.length).toBe(0);
   });
 
   it('should respect query limits', async () => {
