@@ -1,17 +1,16 @@
-import { NextRequest, NextResponse } from "next/server";
-
-const protectedRoutes = ["/dashboard"];
-const authRoutes = ["/auth/login", "/auth/register"];
+import { NextResponse, NextRequest } from "next/server";
 
 export function middleware(request: NextRequest) {
   const token = request.cookies.get("access_token")?.value;
   const { pathname } = request.nextUrl;
 
-  if (protectedRoutes.some((route) => pathname.startsWith(route)) && !token) {
+  
+  if (pathname.startsWith("/dashboard") && !token) {
     return NextResponse.redirect(new URL("/auth/login", request.url));
   }
 
-  if (authRoutes.some((route) => pathname === route) && token) {
+  
+  if (pathname.startsWith("/auth/") && token) {
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 
@@ -19,5 +18,5 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/dashboard", "/dashboard/:path*", "/auth/login", "/auth/register"],
+  matcher: ["/((?!api|_next/static|_next/image|favicon.ico).*)"],
 };

@@ -1,13 +1,13 @@
-import { create } from "zustand";
-import { persist } from "zustand/middleware";
-import Cookies from "js-cookie";
-import { User } from "./api";
+
+import { create } from 'zustand';
+import { persist, createJSONStorage } from 'zustand/middleware';
+import Cookies from 'js-cookie';
+import type { User } from './api';
 
 interface AuthState {
   user: User | null;
   token: string | null;
   setAuth: (user: User, token: string) => void;
-  updateUser: (user: Partial<User>) => void;
   logout: () => void;
 }
 
@@ -16,20 +16,23 @@ export const useAuthStore = create<AuthState>()(
     (set) => ({
       user: null,
       token: null,
-      setAuth: (user: User, token: string) => {
-        Cookies.set("access_token", token, { expires: 7 });
+
+      setAuth: (user, token) => {
+        
+        Cookies.set('access_token', token, { expires: 7, sameSite: 'lax' });
+        localStorage.setItem('sg_token', token);
         set({ user, token });
       },
-      updateUser: (updatedFields: Partial<User>) => {
-        set((state) => ({
-          user: state.user ? { ...state.user, ...updatedFields } : null,
-        }));
-      },
+
       logout: () => {
-        Cookies.remove("access_token");
+        Cookies.remove('access_token');
+        localStorage.removeItem('sg_token');
         set({ user: null, token: null });
       },
     }),
-    { name: "sg-auth-storage" },
-  ),
+    {
+      name: 'sg-auth-storage',
+      storage: createJSONStorage(() => localStorage),
+    }
+  )
 );

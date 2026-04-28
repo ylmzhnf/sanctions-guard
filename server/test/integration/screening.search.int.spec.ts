@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { PrismaService } from '../../src/prisma/prisma.service';
+import { PrismaService } from '../../src/common/prisma/prisma.service';
 import { ScreeningService } from '../../src/screening/screening.service';
 import { ConfigModule } from '@nestjs/config';
 import { RedisService } from '../../src/common/redis/redis.service';
@@ -90,7 +90,6 @@ describe('ScreeningService (Integration)', () => {
     expect(result.matches[0].matchedName).toBe('Vladimir Putin');
     expect(result.riskLevel).toBe(RiskLevel.HIGH);
 
-    
     const logs = await prisma.auditLog.findMany({
       where: { userId },
     });

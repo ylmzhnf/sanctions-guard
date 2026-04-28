@@ -1,20 +1,22 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { Cron } from '@nestjs/schedule';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { SyncStatus } from '@prisma/client';
 import { randomUUID } from 'crypto';
+import { PrismaService } from '../common/prisma/prisma.service';
+import { RedisService } from '../common/redis/redis.service';
+import { SyncProvider } from './interfaces/sync-provider.interface';
 
-import { PrismaService } from '../prisma/prisma.service';
+
 import { OfacProvider } from './providers/ofac.provider';
 import { EuProvider } from './providers/eu.provider';
 import { UnProvider } from './providers/un.provider';
 import { UkProvider } from './providers/uk.provider';
-import { SyncProvider } from './interfaces/sync-provider.interface';
-import { RedisService } from '../common/redis/redis.service';
 
 @Injectable()
-export class SanctionsSyncService {
+export class SanctionsSyncService implements OnModuleInit {
   private readonly logger = new Logger(SanctionsSyncService.name);
-  private readonly providers: SyncProvider[];
+  private providers: SyncProvider[];
+  private readonly LOCK_KEY = 'lock:sanctions_sync';
 
   constructor(
     private readonly prisma: PrismaService,
@@ -23,7 +25,9 @@ export class SanctionsSyncService {
     private readonly euProvider: EuProvider,
     private readonly unProvider: UnProvider,
     private readonly ukProvider: UkProvider,
-  ) {
+  ) {}
+
+  onModuleInit() {
     this.providers = [
       this.ofacProvider,
       this.euProvider,
@@ -32,148 +36,132 @@ export class SanctionsSyncService {
     ];
   }
 
-  @Cron('0 3 * * *')
-  async syncAll() {
-    const lockKey = 'lock:sanctions_sync';
+  @Cron(CronExpression.EVERY_DAY_AT_3AM)
+  async handleScheduledSync() {
+    this.logger.log('Scheduled sync triggered...');
+    await this.syncAll();
+  }
+
+  async syncAll(force = false) {
     const lockValue = randomUUID();
-    const lockTTL = 60 * 60;
+    const lockTTL = 1800; 
 
     try {
+      if (force) await this.redis.getClient().del(this.LOCK_KEY);
+
       const acquired = await this.redis
         .getClient()
-        .set(lockKey, lockValue, 'EX', lockTTL, 'NX');
-
+        .set(this.LOCK_KEY, lockValue, 'EX', lockTTL, 'NX');
       if (!acquired) {
-        this.logger.log(
-          'Synchronization is already running on another instance. Skipping this execution.',
-        );
-        return;
+        this.logger.warn('Sync already running on another instance. Skipping.');
+        return { success: false, message: 'Sync in progress' };
       }
 
-      this.logger.log(
-        'Lock acquired. Starting global sanctions synchronization...',
-      );
+      this.logger.log('Lock acquired. Starting global sync...');
 
+      
       for (const provider of this.providers) {
-        await this.syncProvider(provider);
+        await this.runProviderSync(provider);
       }
 
-      this.logger.log('Global synchronization completed successfully.');
-    } catch (error: any) {
-      this.logger.error(
-        `Unexpected error during global synchronization: ${error.message}`,
-      );
+      return { success: true };
+    } catch (error) {
+      this.logger.error(`Global sync failed: ${error.message}`);
+      return { success: false, error: error.message };
     } finally {
-      try {
-        const currentValue = await this.redis.getClient().get(lockKey);
-        if (currentValue === lockValue) {
-          await this.redis.getClient().del(lockKey);
-          this.logger.log('Lock released successfully.');
-        }
-      } catch (redisError: any) {
-        this.logger.error(
-          `Failed to release Redis lock: ${redisError.message}`,
-        );
-      }
+      await this.releaseLock(lockValue);
     }
   }
 
-  private async syncProvider(provider: SyncProvider) {
+  private async runProviderSync(provider: SyncProvider) {
     const source = provider.sourceName;
-    const syncStartTime = new Date();
-
-    let recordsAdded = 0;
-    let recordsUpdated = 0;
-    let recordsRemoved = 0;
-    let errorMessage: string | null = null;
+    const startTime = new Date();
+    let stats = { added: 0, updated: 0, removed: 0 };
+    let errorMsg: string | null = null;
 
     try {
-      this.logger.log(`[${source}] senkronizasyonu başlatılıyor...`);
-
       const entities = await provider.fetchAndParse();
+      if (!entities.length) return;
 
-      if (entities.length > 0) {
-        const BATCH_SIZE = 500;
+      
+      const BATCH_SIZE = 300; 
+      for (let i = 0; i < entities.length; i += BATCH_SIZE) {
+        const batch = entities.slice(i, i + BATCH_SIZE);
 
-        for (let i = 0; i < entities.length; i += BATCH_SIZE) {
-          const batch = entities.slice(i, i + BATCH_SIZE);
-
-          try {
-            const results = await this.prisma.$transaction(
-              batch.map((entity) => {
-                const formattedCountry = Array.isArray(entity.country)
-                  ? entity.country.join(', ')
-                  : entity.country || null;
-
-                return this.prisma.sanctionedEntity.upsert({
-                  where: { externalId: entity.externalId },
-                  update: {
-                    name: entity.name,
-                    aliases: entity.aliases,
-                    country: formattedCountry,
-                    programs: entity.programs,
-                    reason: entity.remarks,
-                    isActive: true,
-                    lastSyncedAt: syncStartTime,
-                  },
-                  create: {
-                    externalId: entity.externalId,
-                    name: entity.name,
-                    aliases: entity.aliases,
-                    entityType: entity.entityType,
-                    listSource: source,
-                    country: formattedCountry,
-                    programs: entity.programs,
-                    reason: entity.remarks,
-                    isActive: true,
-                    lastSyncedAt: syncStartTime,
-                  },
-                });
-              }),
-            );
-
-            for (const result of results) {
-              if (result.createdAt >= syncStartTime) {
-                recordsAdded++;
-              } else {
-                recordsUpdated++;
-              }
-            }
-          } catch (batchError: any) {
-            this.logger.warn(
-              `[${source}] Batch işleme hatası (Satır ${i}-${i + BATCH_SIZE}): ${batchError.message}`,
-            );
-          }
-        }
-
-        const deactivated = await this.prisma.sanctionedEntity.updateMany({
-          where: {
-            listSource: source,
-            lastSyncedAt: { lt: syncStartTime },
-            isActive: true,
-          },
-          data: { isActive: false },
-        });
-
-        recordsRemoved = deactivated.count;
+        await this.prisma.$transaction(
+          batch.map((e) =>
+            this.prisma.sanctionedEntity.upsert({
+              where: { externalId: e.externalId },
+              update: {
+                ...this.mapEntity(e),
+                lastSyncedAt: startTime,
+                isActive: true,
+              },
+              create: {
+                ...this.mapEntity(e),
+                lastSyncedAt: startTime,
+                isActive: true,
+              },
+            }),
+          ),
+        );
+        stats.added += batch.length; 
       }
 
+      
+      const deactivated = await this.prisma.sanctionedEntity.updateMany({
+        where: {
+          listSource: source,
+          lastSyncedAt: { lt: startTime },
+          isActive: true,
+        },
+        data: { isActive: false },
+      });
+      stats.removed = deactivated.count;
+
       this.logger.log(
-        `[${source}] İşlem bitti. Eklenen: ${recordsAdded}, Güncellenen: ${recordsUpdated}, Pasife Çekilen: ${recordsRemoved}`,
+        `[${source}] Sync complete. Processed: ${stats.added}, Removed: ${stats.removed}`,
       );
-    } catch (error: any) {
-      errorMessage = error.message;
-      this.logger.error(`[${source}] Senkronizasyon hatası: ${errorMessage}`);
+    } catch (err) {
+      errorMsg = err.message;
+      this.logger.error(`[${source}] Provider failed: ${errorMsg}`);
     }
 
+    await this.logSync(source, stats, errorMsg);
+  }
+
+  private mapEntity(e: any) {
+    return {
+      externalId: e.externalId,
+      name: e.name,
+      aliases: e.aliases,
+      entityType: e.entityType,
+      listSource: e.listSource,
+      country: Array.isArray(e.country) ? e.country.join(', ') : e.country,
+      programs: e.programs,
+      reason: e.remarks,
+    };
+  }
+
+  private async releaseLock(value: string) {
+    const script = `
+      if redis.call("get",KEYS[1]) == ARGV[1] then
+        return redis.call("del",KEYS[1])
+      else
+        return 0
+      end
+    `;
+    await this.redis.getClient().eval(script, 1, this.LOCK_KEY, value);
+  }
+
+  private async logSync(source: any, stats: any, error: string | null) {
     await this.prisma.listSyncLog.create({
       data: {
         source,
-        status: errorMessage ? SyncStatus.FAILED : SyncStatus.SUCCESS,
-        recordsAdded,
-        recordsUpdated,
-        recordsRemoved,
-        error: errorMessage,
+        status: error ? SyncStatus.FAILED : SyncStatus.SUCCESS,
+        recordsAdded: stats.added,
+        recordsRemoved: stats.removed,
+        error,
       },
     });
   }

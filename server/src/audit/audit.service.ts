@@ -1,25 +1,19 @@
 import { Injectable, Logger, ForbiddenException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { PrismaService } from '../prisma/prisma.service';
+import { PrismaService } from '../common/prisma/prisma.service';
 import { AuditEntryDto } from './dto/audit-entry.dto';
-import * as crypto from 'crypto';
+import { createHmac, randomUUID } from 'crypto';
 
-export interface AuditInput {
-  action: string;
-  actorId: string;
-  orgId: string;
-  queryId?: string | null;
-  metadata: Record<string, any>;
-}
 @Injectable()
 export class AuditService {
   private readonly logger = new Logger(AuditService.name);
-
+  
   private readonly hmacSecret =
-    process.env.AUDIT_SECRET || 'fallback-audit-secret-key-123';
+    process.env.AUDIT_SECRET || 'audit-integrity-salt-secure-key';
 
-  constructor(private prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) {}
 
+  
   private canonicalStringify(obj: any): string {
     if (obj === null || typeof obj !== 'object') {
       return JSON.stringify(obj);
@@ -30,20 +24,25 @@ export class AuditService {
       );
     }
     const sortedKeys = Object.keys(obj).sort();
-    const result: string[] = [];
-
-    for (const key of sortedKeys) {
-      result.push(
-        `${JSON.stringify(key)}:${this.canonicalStringify(obj[key])}`,
-      );
-    }
+    const result = sortedKeys.map((key) => {
+      return `${JSON.stringify(key)}:${this.canonicalStringify(obj[key])}`;
+    });
     return '{' + result.join(',') + '}';
   }
 
+  
+  private generateHash(payload: object): string {
+    const canonicalPayload = this.canonicalStringify(payload);
+    return createHmac('sha256', this.hmacSecret)
+      .update(canonicalPayload)
+      .digest('hex');
+  }
+
+  
   async log(data: AuditEntryDto): Promise<void> {
-    const id = crypto.randomUUID();
+    const id = randomUUID();
     const timestamp = new Date().toISOString();
-    const actorId = data.actorId ?? 'SYSTEM';
+    const actorId = data.actorId || 'SYSTEM';
 
     const payloadObject = {
       id,
@@ -51,15 +50,11 @@ export class AuditService {
       actorId,
       orgId: data.orgId,
       queryId: data.queryId || null,
-      metadata: data.metadata,
+      metadata: data.metadata || {},
       createdAt: timestamp,
     };
 
-    const canonicalPayload = this.canonicalStringify(payloadObject);
-    const integrityHash = crypto
-      .createHmac('sha256', this.hmacSecret)
-      .update(canonicalPayload)
-      .digest('hex');
+    const integrityHash = this.generateHash(payloadObject);
 
     try {
       await this.prisma.auditLog.create({
@@ -69,16 +64,22 @@ export class AuditService {
           actorId,
           orgId: data.orgId,
           queryId: data.queryId,
-          metadata: data.metadata,
+          metadata: data.metadata as Prisma.InputJsonValue,
           integrityHash,
           createdAt: new Date(timestamp),
         },
       });
     } catch (err) {
-      this.logger.error('CRITICAL: Audit log write failed', err);
+      
+      
+      this.logger.error(
+        `CRITICAL: Audit log write failed for action ${data.action}`,
+        err.stack,
+      );
     }
   }
 
+  
   async verifyLog(logId: string): Promise<{ valid: boolean; log: any }> {
     const log = await this.prisma.auditLog.findUniqueOrThrow({
       where: { id: logId },
@@ -89,34 +90,45 @@ export class AuditService {
       action: log.action,
       actorId: log.actorId,
       orgId: log.orgId,
-      queryId: log.queryId ?? null,
-      metadata: log.metadata,
+      queryId: log.queryId || null,
+      metadata: log.metadata || {},
       createdAt: log.createdAt.toISOString(),
     };
 
-    const canonicalPayload = this.canonicalStringify(payloadObject);
-    const expectedHash = crypto
-      .createHmac('sha256', this.hmacSecret)
-      .update(canonicalPayload)
-      .digest('hex');
-
+    const expectedHash = this.generateHash(payloadObject);
     const valid = expectedHash === log.integrityHash;
 
     if (!valid) {
-      this.logger.error(
-        `ALERT: Audit log integrity check FAILED for id=${logId}`,
-      );
+      this.logger.error(`ALERT: Integrity FAILED for audit log ID: ${logId}`);
     }
 
     return { valid, log };
   }
 
-  async getOrgLogs(orgId: string, page = 1, limit = 50) {
+  
+  async getOrgLogs(orgId: string, page = 1, limit = 50, search?: string) {
     const skip = (page - 1) * limit;
+
+    const whereClause: Prisma.AuditLogWhereInput = { orgId };
+
+    if (search) {
+      whereClause.OR = [
+        { action: { contains: search, mode: 'insensitive' } },
+        { actorId: { contains: search, mode: 'insensitive' } },
+        {
+          user: {
+            OR: [
+              { email: { contains: search, mode: 'insensitive' } },
+              { name: { contains: search, mode: 'insensitive' } },
+            ],
+          },
+        },
+      ];
+    }
 
     const [logs, total] = await Promise.all([
       this.prisma.auditLog.findMany({
-        where: { orgId },
+        where: whereClause,
         orderBy: { createdAt: 'desc' },
         skip,
         take: limit,
@@ -125,7 +137,7 @@ export class AuditService {
           query: { select: { queryName: true, riskLevel: true } },
         },
       }),
-      this.prisma.auditLog.count({ where: { orgId } }),
+      this.prisma.auditLog.count({ where: whereClause }),
     ]);
 
     return {
@@ -136,6 +148,7 @@ export class AuditService {
     };
   }
 
+  
   async update() {
     throw new ForbiddenException(
       'Audit logs are immutable and cannot be modified.',

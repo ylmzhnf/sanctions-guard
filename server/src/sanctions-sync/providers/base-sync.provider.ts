@@ -11,34 +11,25 @@ export abstract class BaseSyncProvider implements SyncProvider {
 
   abstract fetchAndParse(): Promise<ParsedEntity[]>;
 
-  protected async fetchXmlWithRetry(
-    url: string,
-    retries = 3,
-    delay = 2000,
-  ): Promise<string> {
+  protected async fetchXmlWithRetry(url: string, retries = 3): Promise<string> {
     for (let i = 0; i < retries; i++) {
       try {
-        const response = await fetch(url);
-        if (response.ok) return await response.text();
-        this.logger.warn(
-          `Fetch denemesi ${i + 1} başarısız: ${response.statusText}`,
-        );
-      } catch (error: any) {
-        this.logger.warn(
-          `Fetch denemesi ${i + 1} hata verdi: ${error.message}`,
-        );
-      }
+        const response = await fetch(url, {
+          headers: { 'User-Agent': 'SanctionsGuard-Sync-Engine/1.0' },
+        });
 
-      if (i < retries - 1) {
-        await new Promise((res) => setTimeout(res, delay * (i + 1)));
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return await response.text();
+      } catch (error) {
+        if (i === retries - 1) throw error;
+        this.logger.warn(`Fetch retry ${i + 1}/${retries} for ${url}`);
+        await new Promise((res) => setTimeout(res, 2000 * (i + 1)));
       }
     }
-    throw new Error(
-      `${retries} denemeden sonra ${url} adresinden veri çekilemedi.`,
-    );
+    return '';
   }
 
-  protected toArray(item: any): any[] {
+  protected toArray<T>(item: T | T[] | undefined): T[] {
     if (!item) return [];
     return Array.isArray(item) ? item : [item];
   }

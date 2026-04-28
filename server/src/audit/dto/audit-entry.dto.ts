@@ -1,3 +1,4 @@
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsString,
   IsObject,
@@ -7,22 +8,41 @@ import {
 } from 'class-validator';
 
 export class AuditEntryDto {
-  @IsUUID()
+  @ApiPropertyOptional({
+    description: 'İşlemi yapan kullanıcının UUID değeri. Sistem işlemlerinde boş olabilir.',
+    example: '550e8400-e29b-41d4-a716-446655440000',
+  })
   @IsOptional()
-  actorId?: string;
   @IsUUID()
+  actorId?: string;
+
+  @ApiProperty({
+    description: 'İşlemin gerçekleştiği organizasyonun UUID değeri.',
+  })
   @IsNotEmpty()
+  @IsUUID()
   orgId: string;
 
-  @IsString()
+  @ApiProperty({
+    description: 'Yapılan eylemin adı veya kodu.',
+    example: 'USER_LOGIN_SUCCESS',
+  })
   @IsNotEmpty()
+  @IsString()
   action: string;
 
-  @IsObject()
+  @ApiProperty({
+    description: 'İşlemle ilgili ek detaylar ve payload.',
+    example: { ipAddress: '192.168.1.1', browser: 'Chrome' },
+  })
   @IsNotEmpty()
+  @IsObject()
   metadata: Record<string, any>;
 
-  @IsUUID()
+  @ApiPropertyOptional({
+    description: 'Eğer işlem bir tarama (screening) sorgusuyla ilgiliyse o sorgunun ID değeri.',
+  })
   @IsOptional()
-  queryId?: string | null;
+  @IsUUID()
+  queryId?: string;
 }

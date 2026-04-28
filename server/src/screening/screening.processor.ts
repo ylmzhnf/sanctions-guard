@@ -14,7 +14,7 @@ export class ScreeningProcessor extends WorkerHost {
   async process(job: Job<any, any, string>): Promise<any> {
     const { name, entityType, userId, orgId, batchId } = job.data;
 
-    this.logger.debug(`[Batch: ${batchId}] Kuyruktan işleniyor: ${name}`);
+    this.logger.debug(`[Batch: ${batchId}] Processing queue item: "${name}"`);
 
     try {
       const result = await this.screeningService.screen(
@@ -23,20 +23,21 @@ export class ScreeningProcessor extends WorkerHost {
         orgId,
       );
 
-      return result;
-    } catch (error) {
-      this.logger.error(`Tarama hatası (${name}): ${error.message}`);
-      throw error;
+      return { success: true, riskLevel: result.riskLevel, queryId: result.query.id };
+    } catch (error: any) {
+      this.logger.error(`[Batch: ${batchId}] Failed to screen "${name}": ${error.message}`);
+      
+      throw error; 
     }
   }
 
   @OnWorkerEvent('failed')
   onFailed(job: Job, error: Error) {
-    this.logger.error(`Job ${job?.id} başarısız oldu: ${error.message}`);
+    this.logger.warn(`Job ${job?.id} (Batch: ${job?.data?.batchId}) failed. Reason: ${error.message}`);
   }
 
   @OnWorkerEvent('completed')
   onCompleted(job: Job) {
-    this.logger.debug(`Job ${job?.id} başarıyla tamamlandı.`);
+    this.logger.verbose(`Job ${job?.id} successfully completed.`);
   }
 }

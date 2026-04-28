@@ -1,19 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useAuthStore } from "@/lib/store";
-import { billing, ApiError } from "@/lib/api"; 
-import api from "@/lib/api"; // AppSumo için standart axios/api instance
-import { CheckCircle2, Zap, CreditCard, Gift, Loader2, ArrowRight, Building2 } from "lucide-react";
+import {
+  CheckCircle2, CreditCard, Gift, Loader2, ArrowRight,
+  Building2, AlertTriangle, Zap, Shield, Rocket, Star
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import clsx from "clsx";
-
-const PLAN_LABELS: Record<string, string> = {
-  FREE: "Free",
-  STARTER: "Starter",
-  BUSINESS: "Business",
-  ENTERPRISE: "Enterprise (Lifetime)",
-};
+import { cn } from "@/lib/utils";
+import { billing, ApiError } from "@/lib/api";
+import { PLAN_LABELS } from "@/lib/utils";
+import { useFeatureFlags } from "@/hooks/useFeatureFlags";
 
 const PLANS = [
   {
@@ -21,27 +19,37 @@ const PLANS = [
     name: "Free",
     price: "$0",
     period: "forever",
-    queries: "10 queries/month",
-    features: ["OFAC + EU + UN lists", "Basic risk score", "Audit log", "Email support"],
+    queries: "10 queries / month",
+    description: "Get started with basic sanctions screening.",
+    icon: Shield,
+    iconColor: "text-muted-foreground",
+    iconBg: "bg-muted",
+    features: [
+      "OFAC + EU + UN lists",
+      "Basic risk score",
+      "Immutable audit logs",
+      "Email support",
+    ],
     priceId: null,
-    cta: "Current plan",
-    highlight: false,
   },
   {
     key: "STARTER",
     name: "Starter",
     price: "$99",
     period: "/month",
-    queries: "500 queries/month",
+    queries: "500 queries / month",
+    description: "Perfect for growing compliance teams.",
+    icon: Rocket,
+    iconColor: "text-primary",
+    iconBg: "bg-primary/10",
     features: [
       "Everything in Free",
       "AI risk explanations",
       "PDF report export",
-      "API access",
+      "Full API access",
       "Priority email support",
     ],
     priceId: process.env.NEXT_PUBLIC_STRIPE_STARTER_PRICE_ID || "price_starter",
-    cta: "Upgrade to Starter",
     highlight: true,
   },
   {
@@ -49,270 +57,262 @@ const PLANS = [
     name: "Business",
     price: "$499",
     period: "/month",
-    queries: "Unlimited queries",
+    queries: "10,000 queries / month",
+    description: "Built for enterprise-grade compliance workflows.",
+    icon: Star,
+    iconColor: "text-amber-500",
+    iconBg: "bg-amber-500/10",
     features: [
       "Everything in Starter",
       "Custom list upload",
       "Bulk screening API",
       "SLA guarantee",
-      "Dedicated support",
-      "Team members",
+      "Dedicated CSM",
+      "Unlimited team members",
     ],
     priceId: process.env.NEXT_PUBLIC_STRIPE_BUSINESS_PRICE_ID || "price_business",
-    cta: "Upgrade to Business",
-    highlight: false,
   },
 ];
 
 export default function BillingPage() {
-  const user = useAuthStore((s) => s.user);
-  
-  // States
-  const [loading, setLoading] = useState<string | null>(null);
+  const storeUser = useAuthStore((s) => s.user);
+  const { isSaas, allFeaturesUnlocked } = useFeatureFlags();
+  const [loadingId, setLoadingId] = useState<string | null>(null);
   const [error, setError] = useState("");
-  
-  // AppSumo States
-  const [appSumoCode, setAppSumoCode] = useState("");
-  const [appSumoLoading, setAppSumoLoading] = useState(false);
-  const [appSumoMessage, setAppSumoMessage] = useState({ type: "", text: "" });
 
-  const currentPlan = user?.org?.plan || user?.organization?.plan || "FREE";
-  const queriesUsed = user?.org?.queriesUsed || user?.organization?.queriesUsed || 0;
-  const queriesLimit = user?.org?.queriesLimit || user?.organization?.queriesLimit || 10;
-  const isLifetime = user?.org?.isLifetime || user?.organization?.isLifetime;
+  const org = storeUser?.org;
+  const currentPlan = org?.plan || "FREE";
+  const queriesUsed = org?.queriesUsed || 0;
+  const queriesLimit = org?.queriesLimit || 10;
+  const isUnlimited = org?.isUnlimited || ["ENTERPRISE", "SELF_HOSTED"].includes(currentPlan);
 
-  // Checkout İşlemi
-  async function handleUpgrade(priceId: string) {
-    setLoading(priceId);
+  const usagePct = useMemo(() => {
+    if (isUnlimited) return 0;
+    return Math.min(100, Math.round((queriesUsed / queriesLimit) * 100));
+  }, [queriesUsed, queriesLimit, isUnlimited]);
+
+  const handleAction = async (action: "checkout" | "portal", id?: string) => {
+    const key = id || action;
+    setLoadingId(key);
     setError("");
     try {
-      const res = await billing.checkout(priceId);
-      if (res.url) window.location.href = res.url;
+      const res = action === "checkout" ? await billing.checkout(id!) : await billing.portal();
+      if (res?.url) window.location.href = res.url;
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to start checkout");
+      setError(err instanceof ApiError ? err.message : `Failed to process ${action}.`);
     } finally {
-      setLoading(null);
-    }
-  }
-
-  // Portal İşlemi
-  async function handlePortal() {
-    setLoading("portal");
-    setError("");
-    try {
-      const res = await billing.portal();
-      if (res.url) window.location.href = res.url;
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to open billing portal");
-    } finally {
-      setLoading(null);
-    }
-  }
-
-  // AppSumo Redeem İşlemi
-  const handleAppSumoRedeem = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!appSumoCode.trim()) return;
-
-    setAppSumoLoading(true);
-    setAppSumoMessage({ type: "", text: "" });
-
-    try {
-      await api.post("/billing/appsumo/redeem", { code: appSumoCode });
-      setAppSumoMessage({ type: "success", text: "AppSumo code redeemed successfully! Lifetime access unlocked." });
-      setTimeout(() => window.location.reload(), 2000);
-    } catch (err: any) {
-      setAppSumoMessage({ 
-        type: "error", 
-        text: err.response?.data?.message || "Invalid or expired AppSumo code." 
-      });
-    } finally {
-      setAppSumoLoading(false);
+      setLoadingId(null);
     }
   };
 
   return (
-    <div className="max-w-6xl mx-auto space-y-10 animate-in fade-in duration-500 pb-10">
-      
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+    <div className="max-w-[1300px] mx-auto space-y-12 animate-in fade-in duration-1000 pb-20 relative font-sans">
+
+      <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-primary/5 blur-[120px] rounded-full pointer-events-none" />
+      <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-indigo-500/5 blur-[100px] rounded-full pointer-events-none" />
+
+      <div className="flex flex-col lg:flex-row items-start lg:items-end justify-between gap-8 relative z-10">
         <div>
-          <h1 className="text-3xl font-bold text-foreground tracking-tight">Billing & Plans</h1>
-          <p className="text-muted-foreground mt-2 text-sm">
-            You are on the <strong className="text-foreground">{PLAN_LABELS[currentPlan] || currentPlan}</strong> plan.{" "}
-            <span className="text-primary font-medium">{queriesUsed}</span> of {isLifetime ? '∞' : queriesLimit} queries used this month.
+          <div className="flex items-center gap-2 text-primary font-black uppercase text-[10px] tracking-[0.3em] mb-3">
+            <CreditCard className="w-4 h-4" /> Subscription Management
+          </div>
+          <h1 className="text-4xl md:text-5xl font-black tracking-tighter">
+            Billing <span className="bg-clip-text text-transparent bg-gradient-to-r from-primary to-indigo-500">&amp; Plans</span>
+          </h1>
+          <p className="text-muted-foreground text-sm font-medium mt-2 max-w-xl leading-relaxed">
+            Manage your subscription, monitor monthly usage, and upgrade when your screening needs grow.
           </p>
         </div>
-        
-        {currentPlan !== "FREE" && !isLifetime && (
+
+        {currentPlan !== "FREE" && !isUnlimited && (
           <button
-            onClick={handlePortal}
-            disabled={loading === "portal"}
-            className="flex items-center gap-2 px-6 py-2.5 bg-secondary text-secondary-foreground text-sm font-bold rounded-xl transition hover:bg-muted border border-border shadow-sm"
+            onClick={() => handleAction("portal")}
+            disabled={!!loadingId}
+            className="bg-card/60 backdrop-blur-xl text-foreground hover:bg-muted border border-border/50 px-8 py-4 rounded-2xl font-black text-[11px] uppercase tracking-[0.2em] shadow-xl transition-all flex items-center gap-3 disabled:opacity-50"
           >
-            {loading === "portal" ? <Loader2 className="w-4 h-4 animate-spin" /> : <CreditCard className="w-4 h-4" />}
-            {loading === "portal" ? "Opening..." : "Billing Portal"}
+            {loadingId === "portal"
+              ? <Loader2 className="w-4 h-4 animate-spin" />
+              : <CreditCard className="w-4 h-4 text-primary" />}
+            Manage Subscription
           </button>
         )}
       </div>
 
       {error && (
-        <div className="bg-destructive/10 border border-destructive/20 text-destructive text-sm rounded-xl px-4 py-3 animate-shake">
-          {error}
+        <div className="bg-destructive/10 border border-destructive/20 text-destructive text-sm font-bold rounded-2xl px-6 py-4 flex items-center gap-3 relative z-10">
+          <AlertTriangle className="w-5 h-5 shrink-0" /> {error}
         </div>
       )}
 
-      {isLifetime && (
-        <div className="bg-gradient-to-r from-emerald-500/10 to-teal-500/10 border border-emerald-500/20 rounded-2xl p-6 flex flex-col sm:flex-row items-center gap-4 shadow-lg">
-          <div className="bg-emerald-500/20 p-4 rounded-full">
-            <Gift className="w-8 h-8 text-emerald-500" />
-          </div>
-          <div className="flex-1 text-center sm:text-left">
-            <h3 className="text-xl font-bold text-foreground flex items-center justify-center sm:justify-start gap-2">
-              Lifetime Enterprise Access <Badge className="bg-emerald-500/20 text-emerald-400">Active</Badge>
-            </h3>
-            <p className="text-muted-foreground text-sm mt-1">
-              You are currently on an AppSumo Lifetime deal. You have unlimited access. No further billing is required.
-            </p>
-          </div>
-        </div>
-      )}
+      <div className="bg-card/60 backdrop-blur-xl border border-border/50 rounded-[3rem] p-10 shadow-2xl flex flex-col lg:flex-row items-center gap-10 relative overflow-hidden z-10">
+        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-primary to-transparent" />
+        <div className="absolute -top-10 -right-10 w-48 h-48 bg-primary/10 blur-3xl rounded-full pointer-events-none" />
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {PLANS.map((plan) => {
-          const isCurrent = currentPlan === plan.key && !isLifetime;
-          
-          return (
-            <div
-              key={plan.key}
-              className={clsx(
-                "relative flex flex-col bg-card rounded-3xl p-8 border transition-all duration-300",
-                plan.highlight && !isCurrent ? "border-primary ring-1 ring-primary shadow-xl shadow-primary/10 scale-[1.02]" : "border-border shadow-lg",
-                isCurrent && "border-emerald-500 ring-1 ring-emerald-500 shadow-[0_0_30px_-10px_rgba(16,185,129,0.2)]"
-              )}
-            >
-              {plan.highlight && !isCurrent && (
-                <div className="absolute -top-4 left-1/2 -translate-x-1/2">
-                  <Badge className="bg-primary text-primary-foreground px-4 py-1.5 uppercase tracking-widest text-[10px] font-bold shadow-md">
-                    Most Popular
-                  </Badge>
-                </div>
-              )}
-              
-              {isCurrent && (
-                <div className="absolute top-4 right-4">
-                  <Badge variant="outline" className="text-emerald-500 border-emerald-500/30 bg-emerald-500/10">
-                    ✓ Current
-                  </Badge>
-                </div>
-              )}
-
-              <h2 className="text-xl font-bold text-foreground mb-1">{plan.name}</h2>
-              <div className="mt-2 mb-2 flex items-baseline gap-1">
-                <span className="text-4xl font-black text-foreground">{plan.price}</span>
-                <span className="text-muted-foreground text-sm font-medium">{plan.period}</span>
-              </div>
-              <p className="text-sm text-primary font-bold mb-6">{plan.queries}</p>
-
-              <ul className="space-y-4 flex-1 mb-8">
-                {plan.features.map((f) => (
-                  <li key={f} className="text-sm text-foreground flex items-start gap-3">
-                    <CheckCircle2 className={clsx("w-5 h-5 shrink-0 mt-0.5", plan.highlight ? "text-primary" : "text-emerald-500")} />
-                    <span>{f}</span>
-                  </li>
-                ))}
-              </ul>
-
-              {isCurrent || isLifetime ? (
-                <div className="w-full py-3.5 rounded-xl font-bold text-center text-sm bg-secondary text-secondary-foreground opacity-60 cursor-default">
-                  {isLifetime ? "Included in Lifetime" : "Active Plan"}
-                </div>
-              ) : plan.priceId ? (
-                <button
-                  onClick={() => handleUpgrade(plan.priceId!)}
-                  disabled={!!loading}
-                  className={clsx(
-                    "w-full py-3.5 px-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-all disabled:opacity-50 text-sm",
-                    plan.highlight
-                      ? "bg-primary text-primary-foreground hover:opacity-90 shadow-md"
-                      : "bg-secondary text-secondary-foreground hover:bg-muted border border-border"
-                  )}
-                >
-                  {loading === plan.priceId ? <Loader2 className="w-4 h-4 animate-spin" /> : plan.cta}
-                  {loading !== plan.priceId && <ArrowRight className="w-4 h-4" />}
-                </button>
-              ) : (
-                <div className="w-full py-3.5 rounded-xl font-bold text-center text-sm bg-secondary text-secondary-foreground opacity-60 cursor-default">
-                  {plan.cta}
-                </div>
-              )}
+        {isUnlimited ? (
+          <div className="flex items-center gap-6 flex-1 relative z-10">
+            <div className="bg-gradient-to-br from-primary/20 to-primary/5 p-6 rounded-3xl border border-primary/20 shadow-inner">
+              <Gift className="w-10 h-10 text-primary" />
             </div>
-          );
-        })}
+            <div>
+              <div className="flex items-center gap-3 mb-2">
+                <h2 className="text-2xl font-black tracking-tight">Enterprise License</h2>
+                <Badge className="bg-primary text-primary-foreground border-0 px-4 py-1.5 text-[10px] font-black uppercase tracking-[0.2em]">UNLIMITED</Badge>
+              </div>
+              <p className="text-muted-foreground text-sm font-medium max-w-lg leading-relaxed">
+                Your organization holds a private license with unlimited queries and full API access. No Stripe billing required.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="flex-1 relative z-10 w-full">
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-6">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.3em] text-muted-foreground mb-1">Current Plan</p>
+                <h2 className="text-2xl font-black tracking-tight">{PLAN_LABELS[currentPlan as keyof typeof PLAN_LABELS] || currentPlan}</h2>
+              </div>
+              <div className="flex gap-6 text-center">
+                <div>
+                  <p className="text-3xl font-black tracking-tighter text-foreground">{queriesUsed.toLocaleString()}</p>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Used</p>
+                </div>
+                <div className="w-px bg-border/50" />
+                <div>
+                  <p className="text-3xl font-black tracking-tighter text-foreground">{queriesLimit.toLocaleString()}</p>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Monthly Limit</p>
+                </div>
+                <div className="w-px bg-border/50" />
+                <div>
+                  <p className={cn("text-3xl font-black tracking-tighter", usagePct > 90 ? "text-destructive" : "text-emerald-500")}>{usagePct}%</p>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Consumed</p>
+                </div>
+              </div>
+            </div>
+            <div className="w-full h-3 bg-muted rounded-full overflow-hidden">
+              <div
+                className={cn("h-full rounded-full transition-all duration-1000 ease-out", usagePct > 90 ? "bg-destructive" : usagePct > 70 ? "bg-amber-500" : "bg-primary")}
+                style={{ width: `${usagePct}%` }}
+              />
+            </div>
+            {usagePct > 80 && (
+              <p className="text-[11px] font-black text-amber-500 mt-3 uppercase tracking-widest flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4" /> Approaching limit — consider upgrading
+              </p>
+            )}
+          </div>
+        )}
       </div>
 
-      <div className="bg-card border border-border rounded-3xl p-6 shadow-lg flex flex-col md:flex-row items-center justify-between gap-6">
-        <div className="flex items-center gap-4">
-          <div className="bg-secondary p-3 rounded-xl border border-border">
-            <Building2 className="w-6 h-6 text-muted-foreground" />
+      {!isUnlimited && (
+        <div className="relative z-10">
+          <div className="text-center mb-12">
+            <p className="text-[10px] font-black uppercase tracking-[0.3em] text-muted-foreground mb-2">Choose Your Plan</p>
+            <h2 className="text-3xl font-black tracking-tighter">Scale As You Grow</h2>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-8">
+            {PLANS.map((plan, idx) => {
+              const isCurrent = currentPlan === plan.key;
+              const PlanIcon = plan.icon;
+              return (
+                <div
+                  key={plan.key}
+                  className={cn(
+                    "relative flex flex-col bg-card/60 backdrop-blur-xl rounded-[2.5rem] p-10 border transition-all duration-500 hover:shadow-xl group overflow-visible",
+                    plan.highlight && !isCurrent
+                      ? "border-primary/40 shadow-2xl shadow-primary/15 ring-1 ring-primary/20"
+                      : "border-border/50 shadow-sm hover:border-primary/30",
+                    isCurrent && "border-primary/30 bg-primary/5"
+                  )}
+                >
+                  {plan.highlight && (
+                    <div className="absolute -top-px left-0 w-full h-1 bg-gradient-to-r from-primary to-indigo-500" />
+                  )}
+                  <div className="absolute top-0 right-0 w-24 h-24 bg-white/5 blur-2xl rounded-full group-hover:scale-150 transition-transform duration-700 pointer-events-none" />
+
+                  {plan.highlight && !isCurrent && (
+                    <div className="absolute -top-5 left-0 right-0 flex justify-center">
+                      <span className="bg-primary text-primary-foreground px-6 py-2 rounded-full text-[10px] font-black uppercase tracking-[0.2em] shadow-xl shadow-primary/30 pointer-events-none">
+                        Most Popular
+                      </span>
+                    </div>
+                  )}
+
+                  <div className={cn("p-4 rounded-2xl w-fit mb-5 border border-border/50 shadow-inner", plan.iconBg)}>
+                    <PlanIcon className={cn("w-6 h-6", plan.iconColor)} />
+                  </div>
+
+                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground mb-1">{plan.description}</p>
+                  <h2 className="text-2xl font-black tracking-tighter uppercase italic mb-4">{plan.name}</h2>
+                  
+                  <div className="flex items-baseline gap-1.5 mb-2">
+                    <span className="text-5xl font-black tracking-tighter">{plan.price}</span>
+                    <span className="text-muted-foreground text-[11px] font-black uppercase tracking-widest">{plan.period}</span>
+                  </div>
+                  <p className="text-[11px] font-black text-primary uppercase tracking-[0.2em] mb-8">{plan.queries}</p>
+
+                  <ul className="space-y-4 flex-1 mb-8">
+                    {plan.features.map((f) => (
+                      <li key={f} className="text-sm text-foreground/80 font-medium flex items-start gap-3">
+                        <div className="p-0.5 rounded-md bg-primary/10 mt-0.5">
+                          <CheckCircle2 className="w-4 h-4 text-primary shrink-0" />
+                        </div>
+                        {f}
+                      </li>
+                    ))}
+                  </ul>
+
+                  {isCurrent ? (
+                    <div className="w-full py-4 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] text-center bg-primary/10 text-primary border border-primary/20">
+                      Current Plan
+                    </div>
+                  ) : plan.priceId ? (
+                    <button
+                      onClick={() => handleAction("checkout", plan.priceId!)}
+                      disabled={!!loadingId}
+                      className={cn(
+                        "w-full py-5 px-6 rounded-2xl font-black uppercase tracking-[0.2em] flex items-center justify-center gap-3 transition-all disabled:opacity-50 text-[11px] shadow-xl active:scale-95",
+                        plan.highlight
+                          ? "bg-primary text-primary-foreground hover:scale-[1.02] shadow-primary/20 hover:shadow-[0_0_30px_rgba(var(--primary),0.3)]"
+                          : "bg-foreground text-background hover:bg-foreground/90"
+                      )}
+                    >
+                      {loadingId === plan.priceId
+                        ? <Loader2 className="w-4 h-4 animate-spin" />
+                        : <><span>Upgrade Now</span><ArrowRight className="w-4 h-4" /></>}
+                    </button>
+                  ) : (
+                    <div className="w-full py-4 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] text-center bg-muted/50 text-muted-foreground border border-border/50">
+                      Start for Free
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      <div className="relative z-10 border border-dashed border-primary/20 bg-card/40 backdrop-blur-xl rounded-[2.5rem] p-10 flex flex-col lg:flex-row items-center justify-between gap-8 hover:border-primary/40 transition-colors group overflow-hidden">
+        <div className="absolute -top-8 -right-8 w-40 h-40 bg-primary/10 blur-3xl rounded-full group-hover:scale-150 transition-transform duration-700 pointer-events-none" />
+        <div className="flex items-center gap-6 relative z-10">
+          <div className="bg-gradient-to-br from-primary/20 to-primary/5 p-5 rounded-3xl border border-primary/20 shrink-0 shadow-inner">
+            <Building2 className="w-8 h-8 text-primary" />
           </div>
           <div>
-            <h3 className="font-bold text-foreground text-lg">Enterprise</h3>
-            <p className="text-muted-foreground text-sm mt-1">
-              On-premise deployment, custom sanctions lists, SLA guarantee, and a dedicated CSM.
+            <p className="text-[10px] font-black uppercase tracking-[0.3em] text-primary mb-1">Custom Deployment</p>
+            <h3 className="font-black text-foreground text-xl tracking-tighter uppercase italic">Enterprise &amp; On-Premise</h3>
+            <p className="text-muted-foreground text-sm font-medium mt-1 leading-relaxed max-w-lg">
+              Need a private cloud deployment, custom API limits, VPC peering, or dedicated infrastructure? Our sales team is ready.
             </p>
           </div>
         </div>
         <a
           href="mailto:sales@sanctions-guard.com?subject=Enterprise%20Inquiry"
-          className="shrink-0 px-6 py-3 bg-secondary text-secondary-foreground hover:bg-muted border border-border rounded-xl font-bold text-sm transition-colors flex items-center gap-2"
+          className="shrink-0 px-10 py-5 bg-primary text-primary-foreground rounded-2xl font-black text-[11px] uppercase tracking-[0.2em] transition-all flex items-center gap-3 shadow-xl shadow-primary/20 hover:scale-105 active:scale-95 relative z-10"
         >
-          Contact sales <ArrowRight className="w-4 h-4" />
+          Contact Sales <ArrowRight className="w-4 h-4" />
         </a>
       </div>
-
-      {!isLifetime && (
-        <div className="mt-8 bg-card border border-border rounded-3xl p-8 shadow-lg max-w-3xl mx-auto text-center">
-          <div className="flex justify-center mb-4">
-            <div className="bg-amber-500/10 p-3 rounded-2xl border border-amber-500/20">
-              <Zap className="w-8 h-8 text-amber-500" />
-            </div>
-          </div>
-          <h2 className="text-xl font-bold text-foreground mb-2">Have an AppSumo Code?</h2>
-          <p className="text-sm text-muted-foreground mb-8">
-            Redeem your AppSumo license key below to unlock Lifetime Enterprise access immediately.
-          </p>
-
-          <form onSubmit={handleAppSumoRedeem} className="flex flex-col sm:flex-row gap-3 max-w-lg mx-auto">
-            <input
-              type="text"
-              placeholder="e.g. AS-XXXX-YYYY"
-              value={appSumoCode}
-              onChange={(e) => setAppSumoCode(e.target.value)}
-              disabled={appSumoLoading}
-              className="flex-1 bg-background border border-border rounded-xl px-4 py-3 text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary uppercase transition-all placeholder:normal-case"
-            />
-            <button
-              type="submit"
-              disabled={!appSumoCode || appSumoLoading}
-              className="px-8 py-3 bg-foreground text-background font-bold rounded-xl transition hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2"
-            >
-              {appSumoLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : "Redeem Code"}
-            </button>
-          </form>
-
-          {appSumoMessage.text && (
-            <div className={clsx(
-              "mt-4 text-sm font-medium p-3 rounded-xl inline-block border",
-              appSumoMessage.type === 'success' 
-                ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" 
-                : "bg-destructive/10 text-destructive border-destructive/20 animate-shake"
-            )}>
-              {appSumoMessage.text}
-            </div>
-          )}
-        </div>
-      )}
-
     </div>
   );
 }

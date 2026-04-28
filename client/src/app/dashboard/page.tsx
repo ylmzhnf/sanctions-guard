@@ -1,205 +1,267 @@
 "use client";
 
+import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
-import api from "@/lib/api";
-import { useAuthStore } from "@/lib/store";
-import { Badge } from "@/components/ui/badge";
-import {
-  Activity,
-  ShieldAlert,
-  Search,
-  Database,
-  ArrowRight,
-  Loader2,
-  Zap,
-  AlertTriangle,
+import { 
+  Activity, ShieldAlert, Search, Database, 
+  ArrowRight, Loader2, Zap, AlertTriangle, 
+  TrendingUp, ShieldCheck, Sparkles
 } from "lucide-react";
-import clsx from "clsx";
+
+import { auth, screening } from "@/lib/api";
+import { useAuthStore } from "@/lib/store";
+import { useFeatureFlags } from "@/hooks/useFeatureFlags";
+import { cn, RISK_CONFIG, formatDate, PLAN_LABELS } from "@/lib/utils";
 
 export default function DashboardHomePage() {
   const router = useRouter();
-  const { user } = useAuthStore();
+  const [isMounted, setIsMounted] = useState(false);
+  const storeUser = useAuthStore((s) => s.user);
+  const { allFeaturesUnlocked, isSaas } = useFeatureFlags();
 
-  const { data: userData, isLoading: isUserLoading } = useQuery({
-    queryKey: ["current-user-status"],
-    queryFn: async () => {
-      const response = await api.get("/users/me");
-      return response.data;
-    },
+  useEffect(() => { setIsMounted(true); }, []);
+
+  // --- Veri Çekme Katmanı (SWR Mantığı) ---
+  const { data: user, isLoading: isUserLoading } = useQuery({
+    queryKey: ["current-user"],
+    queryFn: auth.me,
+    staleTime: 0,
+    refetchOnWindowFocus: true,
+    refetchOnMount: true,
+    refetchInterval: 5000, // Her 5 saniyede bir güncelle
+  });
+
+  const { data: history, isLoading: isHistoryLoading } = useQuery({
+    queryKey: ["recent-screenings"],
+    queryFn: () => screening.history(1, 5),
+    refetchInterval: 5000, // Her 5 saniyede bir güncelle
     refetchOnWindowFocus: true,
   });
 
-  const { data: dashboardLogs = [], isLoading: isLogsLoading } = useQuery({
-    queryKey: ["dashboard-logs"],
-    queryFn: async () => {
-      const response = await api.get("/audit/logs?limit=50");
-      return response.data?.success ? response.data.data : (response.data ?? []);
-    },
-  });
+  // --- Metrik Hesaplamaları ---
+  const stats = useMemo(() => {
+    const queries = history?.queries || [];
+    const limit = user?.org?.queriesLimit || 10;
+    const used = user?.org?.queriesUsed || 0;
+    
+    const remaining = (allFeaturesUnlocked || limit === -1) ? "∞" : Math.max(0, limit - used);
+    const limitReached = (!allFeaturesUnlocked && limit !== -1) && used >= limit;
+    const highRisk = queries.filter((q: any) => ['HIGH', 'CRITICAL'].includes(q.riskLevel)).length;
 
-  const activeOrg = userData?.organization || user?.organization || user?.org;
-  
-  const isLifetime = activeOrg?.isLifetime;
-  const limit = activeOrg?.queriesLimit || 10;
-  const used = activeOrg?.queriesUsed || 0;
-  const queriesRemaining = isLifetime ? "∞" : Math.max(0, limit - used);
-  const isLimitReached = !isLifetime && Number(queriesRemaining) <= 0;
+    return {
+      total: history?.total || 0,
+      highRisk,
+      remaining,
+      limitReached,
+      limit,
+      recent: queries.slice(0, 5)
+    };
+  }, [history, user, allFeaturesUnlocked]);
 
-  const totalScreenings = dashboardLogs.filter((l: any) => l.action?.includes("SCREENING")).length;
-  const criticalMatches = dashboardLogs.filter((log: any) => {
-    const risk = log.metadata?.riskLevel?.toUpperCase();
-    return ["CRITICAL", "HIGH", "EXACT MATCH"].includes(risk);
-  }).length;
-
-  const recentQueries = dashboardLogs.slice(0, 5);
+  if (!isMounted) return <div className="min-h-screen bg-background" />;
 
   return (
-    <div className="max-w-6xl mx-auto space-y-8 animate-in fade-in duration-700 pb-12">
+    <div className="max-w-[1400px] mx-auto space-y-10 animate-in fade-in duration-1000 pb-16 font-sans">
       
-      {isLimitReached && (
-        <div className="bg-destructive border border-destructive/20 rounded-2xl p-6 text-white flex flex-col md:flex-row items-center justify-between gap-4 shadow-2xl animate-in slide-in-from-top-4">
-          <div className="flex items-center gap-4">
-            <div className="bg-white/20 p-3 rounded-full">
-              <ShieldAlert className="w-8 h-8" />
+      {/* ── Limit Uyarısı (Quota Exhausted) ──────────────────────────────── */}
+      {stats.limitReached && (
+        <div className="relative overflow-hidden bg-gradient-to-r from-destructive/20 to-background border border-destructive/30 rounded-3xl p-8 flex flex-col md:flex-row items-center justify-between gap-8 shadow-[0_0_40px_-10px_rgba(239,68,68,0.3)] animate-in slide-in-from-top-4 group">
+          <div className="absolute top-0 right-0 w-64 h-64 bg-destructive/10 blur-[80px] rounded-full group-hover:bg-destructive/20 transition-colors duration-1000" />
+          <div className="flex items-center gap-6 relative z-10">
+            <div className="bg-destructive/20 p-4 rounded-2xl shrink-0 shadow-inner">
+              <ShieldAlert className="w-8 h-8 text-destructive animate-pulse" />
             </div>
             <div>
-              <h3 className="text-xl font-bold">Search limit reached!</h3>
-              <p className="text-white/80 text-sm font-medium">Your monthly quota is exhausted. Upgrade to continue screening.</p>
+              <h3 className="text-2xl font-black tracking-tight text-destructive">Quota Exhausted</h3>
+              <p className="text-foreground/80 text-sm font-medium mt-1.5 max-w-lg leading-relaxed">
+                Your organization has reached its screening capacity. Compliance operations are suspended until the limit is extended or billing is upgraded.
+              </p>
             </div>
           </div>
           <Link
             href="/dashboard/billing"
-            className="w-full md:w-auto bg-white text-destructive hover:bg-opacity-90 px-8 py-3 rounded-xl font-black text-sm transition-all shadow-lg text-center"
+            className="w-full md:w-auto relative z-10 bg-destructive text-white hover:bg-destructive/90 hover:scale-105 active:scale-95 px-10 py-4 rounded-xl font-black text-xs uppercase tracking-[0.2em] transition-all shadow-lg text-center shrink-0"
           >
-            UPGRADE NOW
+            Upgrade Plan Now
           </Link>
         </div>
       )}
 
-      <div className="flex justify-between items-start">
+      {/* ── Karşılama ve Plan Etiketi ────────────────────────────────────── */}
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 relative z-10">
         <div>
-          <h1 className="text-3xl font-bold text-foreground tracking-tight">
-            Welcome back, {user?.name?.split(" ")[0] || "User"} 👋
+          <h1 className="text-4xl md:text-5xl font-black text-foreground tracking-tighter">
+            Welcome back, <span className="bg-clip-text text-transparent bg-gradient-to-r from-primary to-blue-500">{user?.name?.split(" ")[0] || "Commander"}</span> 👋
           </h1>
-          <p className="text-muted-foreground text-sm mt-1">Real-time compliance monitoring dashboard.</p>
+          <p className="text-muted-foreground text-sm mt-3 font-medium flex items-center gap-2">
+            <Activity className="w-4 h-4 text-primary" /> Real-time compliance intelligence is active and monitoring.
+          </p>
         </div>
-        {!isLifetime && (
-           <Badge variant={isLimitReached ? "critical" : "outline"} className="px-3 py-1">
-             {activeOrg?.plan || "FREE"} PLAN
-           </Badge>
-        )}
+        <div className="flex items-center gap-3">
+          {allFeaturesUnlocked && (
+            <div className="px-4 py-2 text-[10px] font-black rounded-xl uppercase tracking-[0.2em] border border-emerald-500/30 bg-emerald-500/10 text-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.15)] flex items-center gap-2">
+              <Sparkles className="w-3 h-3" /> Enterprise Secured
+            </div>
+          )}
+          <div className={cn(
+            "px-4 py-2 text-[10px] font-black rounded-xl uppercase tracking-[0.2em] border shadow-sm flex items-center gap-2",
+            stats.limitReached ? "bg-destructive/10 text-destructive border-destructive/20" : "bg-card text-foreground border-border"
+          )}>
+            <div className={cn("w-2 h-2 rounded-full", stats.limitReached ? "bg-destructive" : "bg-primary")} />
+            {PLAN_LABELS[(user?.org?.plan as keyof typeof PLAN_LABELS)] || "FREE"} PLAN
+          </div>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+      {/* ── İstatistik Kartları ───────────────────────────────────────────── */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8">
         <StatCard 
-          icon={<Activity className="w-6 h-6 text-primary" />} 
+          icon={<TrendingUp className="w-7 h-7 text-blue-500" />} 
           label="Total Screenings" 
-          value={totalScreenings} 
-          isLoading={isLogsLoading} 
+          value={stats.total} 
+          isLoading={isHistoryLoading} 
+          colorClass="bg-gradient-to-br from-blue-500/20 to-blue-500/5 border-blue-500/20 text-blue-500"
+          glowClass="shadow-[0_0_30px_-10px_rgba(59,130,246,0.2)]"
         />
         <StatCard 
-          icon={<ShieldAlert className="w-6 h-6 text-destructive" />} 
+          icon={<ShieldAlert className="w-7 h-7 text-destructive" />} 
           label="High/Critical Alerts" 
-          value={criticalMatches} 
-          isLoading={isLogsLoading} 
-          color="destructive"
+          value={stats.highRisk} 
+          isLoading={isHistoryLoading} 
+          colorClass="bg-gradient-to-br from-destructive/20 to-destructive/5 border-destructive/20 text-destructive"
+          glowClass={stats.highRisk > 0 ? "shadow-[0_0_30px_-10px_rgba(239,68,68,0.4)]" : "shadow-[0_0_30px_-10px_rgba(239,68,68,0.1)]"}
+          valueClass={stats.highRisk > 0 ? "text-destructive" : ""}
         />
         <StatCard 
-          icon={<Database className={clsx("w-6 h-6", isLimitReached ? "text-destructive" : "text-emerald-500")} />} 
+          icon={<Database className={cn("w-7 h-7", stats.limitReached ? "text-destructive" : "text-emerald-500")} />} 
           label="Queries Remaining" 
-          value={queriesRemaining} 
+          value={stats.remaining} 
           isLoading={isUserLoading} 
-          subValue={!isLifetime ? `/ ${limit}` : undefined}
-          color={isLimitReached ? "destructive" : "emerald"}
-          highlight={isLimitReached}
+          subValue={!allFeaturesUnlocked && stats.limit !== -1 ? `/ ${stats.limit}` : undefined}
+          colorClass={stats.limitReached ? "bg-gradient-to-br from-destructive/20 to-destructive/5 border-destructive/20 text-destructive" : "bg-gradient-to-br from-emerald-500/20 to-emerald-500/5 border-emerald-500/20 text-emerald-500"}
+          highlight={stats.limitReached}
+          glowClass={stats.limitReached ? "shadow-[0_0_30px_-10px_rgba(239,68,68,0.3)]" : "shadow-[0_0_30px_-10px_rgba(16,185,129,0.2)]"}
         />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 bg-card rounded-2xl border border-border shadow-lg overflow-hidden flex flex-col min-h-[400px]">
-          <div className="p-5 border-b border-border bg-muted/20 flex justify-between items-center">
-            <h2 className="font-bold text-foreground uppercase text-xs tracking-widest flex items-center gap-2">
-              <Activity className="w-4 h-4 text-primary" /> Recent Queries
-            </h2>
-            <Link href="/dashboard/logs" className="text-xs text-primary hover:underline font-bold">View all &rarr;</Link>
+      {/* ── Alt Grid: Tablo ve Hızlı Eylem ────────────────────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        
+        {/* Sol Taraf: Son Sorgular Tablosu */}
+        <div className="lg:col-span-2 bg-card/60 backdrop-blur-xl rounded-[2.5rem] border border-border shadow-xl overflow-hidden flex flex-col min-h-[460px] relative">
+          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-primary to-transparent" />
+          <div className="px-10 py-8 border-b border-border/50 bg-muted/10 flex justify-between items-center">
+            <div className="flex items-center gap-4">
+              <div className="p-2.5 bg-primary/10 rounded-xl">
+                <Activity className="w-5 h-5 text-primary" />
+              </div>
+              <h2 className="font-black text-foreground uppercase text-sm tracking-[0.2em]">Recent Intelligence</h2>
+            </div>
+            <Link href="/dashboard/history" className="text-[10px] font-black uppercase text-primary hover:bg-primary/10 px-4 py-2 rounded-lg transition-all tracking-[0.2em]">
+              View All
+            </Link>
           </div>
 
-          <div className="flex-1 overflow-x-auto">
-            {isLogsLoading ? (
-              <div className="h-full flex items-center justify-center p-20"><Loader2 className="animate-spin text-primary" /></div>
-            ) : recentQueries.length === 0 ? (
+          <div className="flex-1 overflow-x-auto p-2">
+            {isHistoryLoading ? (
+              <div className="h-full flex flex-col items-center justify-center p-20 text-muted-foreground gap-4">
+                <Loader2 className="animate-spin w-10 h-10 text-primary" />
+                <span className="text-[10px] font-black uppercase tracking-[0.3em] animate-pulse">Decrypting Records...</span>
+              </div>
+            ) : stats.recent.length === 0 ? (
               <EmptyState router={router} />
             ) : (
-              <table className="w-full text-left">
-                <thead className="bg-muted/30 text-[10px] text-muted-foreground uppercase tracking-widest font-bold border-b border-border">
+              <table className="w-full text-left border-separate border-spacing-y-2 px-6">
+                <thead className="text-[10px] text-muted-foreground uppercase tracking-[0.2em] font-black">
                   <tr>
-                    <th className="px-6 py-4">Subject</th>
-                    <th className="px-6 py-4 text-center">Matches</th>
-                    <th className="px-6 py-4 text-right">Risk</th>
+                    <th className="px-6 py-4 font-black">Entity Subject</th>
+                    <th className="px-6 py-4 text-center font-black">Matches</th>
+                    <th className="px-6 py-4 text-right font-black">Risk Score</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-border">
-                  {recentQueries.map((log: any) => (
-                    <tr key={log.id} className="hover:bg-secondary/50 transition-colors">
-                      <td className="px-6 py-4">
-                        <p className="font-bold text-foreground text-sm">{log.metadata?.queryName || "N/A"}</p>
-                        <p className="text-[10px] text-muted-foreground">{new Date(log.createdAt).toLocaleString()}</p>
-                      </td>
-                      <td className="px-6 py-4 text-center">
-                        <span className="text-xs font-medium bg-secondary border border-border px-2 py-1 rounded">
-                          {log.metadata?.matchedCount ?? 0} Hits
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-right">
-                        <Badge variant={getBadgeVariant(log.metadata?.riskLevel)} className="text-[9px] uppercase font-black">
-                          {log.metadata?.riskLevel || "CLEAR"}
-                        </Badge>
-                      </td>
-                    </tr>
-                  ))}
+                <tbody>
+                  {stats.recent.map((query: any) => {
+                    const risk = RISK_CONFIG[query.riskLevel as keyof typeof RISK_CONFIG] || RISK_CONFIG.CLEAR;
+                    return (
+                      <tr 
+                        key={query.id} 
+                        className="bg-background/40 hover:bg-muted/50 transition-all cursor-pointer group shadow-sm hover:shadow-md rounded-2xl" 
+                        onClick={() => router.push(`/dashboard/history/${query.id}`)}
+                      >
+                        <td className="px-6 py-5 rounded-l-2xl">
+                          <p className="font-bold text-foreground text-sm group-hover:text-primary transition-colors truncate max-w-[250px]">
+                            {query.queryName}
+                          </p>
+                          <p className="text-[10px] font-bold text-muted-foreground mt-1 tracking-widest uppercase">
+                            {formatDate(query.createdAt)}
+                          </p>
+                        </td>
+                        <td className="px-6 py-5 text-center">
+                          <span className="text-[11px] font-black bg-background border border-border/50 px-3 py-1.5 rounded-xl shadow-sm">
+                            {query.matchCount} <span className="text-muted-foreground ml-1">HITS</span>
+                          </span>
+                        </td>
+                        <td className="px-6 py-5 text-right rounded-r-2xl">
+                          <span className={cn(
+                            "text-[10px] font-black uppercase px-4 py-2 rounded-xl border tracking-[0.2em] shadow-sm", 
+                            risk.bg, risk.color, risk.border
+                          )}>
+                            {risk.label}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             )}
           </div>
         </div>
 
-        <div className={clsx(
-          "lg:col-span-1 rounded-2xl shadow-xl p-8 flex flex-col relative overflow-hidden h-full transition-colors",
-          isLimitReached ? "bg-card border-2 border-destructive" : "bg-primary text-primary-foreground"
+        {/* Sağ Taraf: Hızlı Aksiyon Kartı */}
+        <div className={cn(
+          "lg:col-span-1 rounded-[2.5rem] shadow-2xl p-10 flex flex-col relative overflow-hidden h-full transition-all duration-500 border group",
+          stats.limitReached ? "bg-card border-destructive/30" : "bg-primary border-primary hover:shadow-[0_0_50px_-10px_rgba(var(--primary),0.5)]"
         )}>
-          <div className="absolute -top-4 -right-4 p-4 opacity-10">
-            {isLimitReached ? <AlertTriangle className="w-48 h-48 text-destructive" /> : <Zap className="w-48 h-48" />}
+          {/* Animated Background Mesh */}
+          <div className="absolute inset-0 bg-mesh opacity-20 mix-blend-overlay pointer-events-none" />
+          
+          <div className="absolute -bottom-10 -right-10 p-4 opacity-10 group-hover:scale-110 group-hover:-rotate-12 transition-transform duration-700 pointer-events-none">
+            {stats.limitReached ? <AlertTriangle className="w-64 h-64 text-destructive" /> : <Search className="w-64 h-64 text-white" />}
           </div>
 
           <div className="relative z-10 flex-1 flex flex-col">
-            <div className={clsx(
-              "w-12 h-12 rounded-xl flex items-center justify-center mb-6 shadow-inner border",
-              isLimitReached ? "bg-destructive/10 border-destructive/20" : "bg-white/20 border-white/30"
+            <div className={cn(
+              "w-16 h-16 rounded-3xl flex items-center justify-center mb-8 shadow-2xl border backdrop-blur-md",
+              stats.limitReached ? "bg-destructive/10 border-destructive/30" : "bg-white/20 border-white/40"
             )}>
-              {isLimitReached ? <ShieldAlert className="w-6 h-6 text-destructive" /> : <Search className="w-6 h-6 text-white" />}
+              {stats.limitReached ? <ShieldAlert className="w-8 h-8 text-destructive" /> : <Search className="w-8 h-8 text-white" />}
             </div>
 
-            <h3 className={clsx("text-2xl font-bold mb-3", isLimitReached ? "text-foreground" : "text-white")}>
-              {isLimitReached ? "Limit Reached" : "Screen an Entity"}
+            <h3 className={cn("text-4xl font-black mb-4 tracking-tighter leading-none", stats.limitReached ? "text-foreground" : "text-white")}>
+              {stats.limitReached ? "Operations Suspended" : "Ready to Screen?"}
             </h3>
-            <p className={clsx("text-sm mb-8 leading-relaxed", isLimitReached ? "text-muted-foreground" : "text-white/90")}>
-              {isLimitReached 
-                ? "Your organization's monthly screening quota has been exhausted. Upgrade now to restore access."
-                : "Perform a fuzzy match search against global sanctions lists in milliseconds."}
+            <p className={cn("text-sm mb-10 leading-relaxed font-medium", stats.limitReached ? "text-muted-foreground" : "text-white/80")}>
+              {stats.limitReached 
+                ? "Your compliance operations are paused. Please upgrade your active plan to continue screening."
+                : "Perform a real-time deep scan against global watchlists, OFAC, UN, and EU databases."}
             </p>
 
             <button
-              onClick={() => router.push(isLimitReached ? "/dashboard/billing" : "/dashboard/search")}
-              className={clsx(
-                "mt-auto w-full px-5 py-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-all shadow-lg",
-                isLimitReached 
-                  ? "bg-destructive text-white hover:bg-destructive/90" 
-                  : "bg-white text-primary hover:bg-secondary"
+              onClick={() => router.push(stats.limitReached ? "/dashboard/billing" : "/dashboard/search")}
+              className={cn(
+                "mt-auto w-full px-6 py-5 rounded-2xl font-black text-[11px] uppercase tracking-[0.2em] flex items-center justify-between transition-all duration-300 shadow-xl",
+                stats.limitReached 
+                  ? "bg-destructive text-white hover:bg-destructive/90 hover:scale-[1.02]" 
+                  : "bg-background text-foreground hover:bg-white hover:scale-[1.02]"
               )}
             >
-              {isLimitReached ? "Upgrade Plan" : "Open Search Tool"} <ArrowRight className="w-4 h-4" />
+              <span>{stats.limitReached ? "View Upgrade Options" : "Launch Engine"}</span> 
+              <div className={cn("w-8 h-8 rounded-full flex items-center justify-center", stats.limitReached ? "bg-white/20" : "bg-primary/10")}>
+                <ArrowRight className="w-4 h-4" />
+              </div>
             </button>
           </div>
         </div>
@@ -208,53 +270,53 @@ export default function DashboardHomePage() {
   );
 }
 
+// --- Alt Bileşenler ---
 
-function StatCard({ icon, label, value, isLoading, subValue, color = "primary", highlight = false }: any) {
+function StatCard({ icon, label, value, isLoading, subValue, colorClass, highlight = false, glowClass, valueClass }: any) {
   return (
-    <div className={clsx(
-      "bg-card p-6 rounded-2xl border transition-all shadow-lg",
-      highlight ? "border-destructive ring-1 ring-destructive" : "border-border"
+    <div className={cn(
+      "bg-card/50 backdrop-blur-xl p-8 rounded-[2rem] border transition-all duration-500 flex items-start gap-6 hover:-translate-y-1 relative overflow-hidden group",
+      highlight ? "border-destructive/50 ring-1 ring-destructive" : "border-border/50 hover:border-primary/50",
+      glowClass
     )}>
-      <div className="flex items-center gap-4">
-        <div className={clsx(
-          "p-3 rounded-xl border",
-          color === "primary" && "bg-primary/10 border-primary/20",
-          color === "destructive" && "bg-destructive/10 border-destructive/20",
-          color === "emerald" && "bg-emerald-500/10 border-emerald-500/20"
-        )}>
-          {icon}
-        </div>
-        <div>
-          <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold">{label}</p>
-          {isLoading ? (
-            <div className="h-8 w-20 bg-muted animate-pulse rounded mt-1" />
-          ) : (
-            <h3 className={clsx("text-3xl font-black mt-1", highlight && "text-destructive")}>
-              {value} {subValue && <span className="text-sm font-medium text-muted-foreground">{subValue}</span>}
-            </h3>
-          )}
-        </div>
+      <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 blur-2xl rounded-full group-hover:scale-150 transition-transform duration-700 pointer-events-none" />
+      <div className={cn("p-4 rounded-2xl border shrink-0 shadow-inner relative z-10", colorClass)}>
+        {icon}
+      </div>
+      <div className="relative z-10 flex-1">
+        <p className="text-[10px] text-muted-foreground uppercase tracking-[0.2em] font-black mb-2">{label}</p>
+        {isLoading ? (
+          <div className="h-10 w-24 bg-muted/50 animate-pulse rounded-xl" />
+        ) : (
+          <h3 className={cn("text-4xl font-black tracking-tighter leading-none", highlight && "text-destructive", valueClass)}>
+            {value} 
+            {subValue && <span className="text-sm font-bold text-muted-foreground ml-2 tracking-normal">{subValue}</span>}
+          </h3>
+        )}
       </div>
     </div>
   );
 }
 
-function EmptyState({ router }: any) {
+function EmptyState({ router }: { router: any }) {
   return (
-    <div className="h-full flex flex-col items-center justify-center text-center p-12 min-h-[350px]">
-      <Search className="w-12 h-12 text-muted-foreground/30 mb-4" />
-      <h3 className="text-foreground font-bold text-lg">Clean History</h3>
-      <p className="text-muted-foreground text-sm mb-6 max-w-xs">Start your first automated screening to see activity here.</p>
-      <button onClick={() => router.push("/dashboard/search")} className="text-primary font-bold flex items-center gap-2">
-        Launch Tool <ArrowRight className="w-4 h-4" />
+    <div className="h-full flex flex-col items-center justify-center text-center p-12 min-h-[400px]">
+      <div className="relative mb-8">
+        <div className="absolute inset-0 bg-primary/20 blur-2xl rounded-full" />
+        <div className="bg-card border border-border p-6 rounded-3xl relative z-10 shadow-xl">
+          <ShieldCheck className="w-12 h-12 text-primary" />
+        </div>
+      </div>
+      <h3 className="text-foreground font-black text-2xl tracking-tight mb-2">No Screenings Yet</h3>
+      <p className="text-muted-foreground text-sm max-w-[300px] font-medium leading-relaxed mb-8">
+        Your audit trail is currently empty. Initialize your first screening to populate the history.
+      </p>
+      <button 
+        onClick={() => router.push("/dashboard/search")} 
+        className="bg-primary text-primary-foreground hover:bg-primary/90 px-8 py-4 rounded-xl font-black text-[10px] uppercase tracking-[0.2em] flex items-center gap-3 transition-all shadow-lg hover:shadow-primary/20 hover:-translate-y-0.5"
+      >
+        Start Screening <ArrowRight className="w-4 h-4" />
       </button>
     </div>
   );
-}
-
-function getBadgeVariant(risk: string): any {
-  const r = risk?.toUpperCase();
-  if (["CRITICAL", "HIGH", "EXACT MATCH"].includes(r)) return "critical";
-  if (r === "MEDIUM") return "warning";
-  return "default";
 }

@@ -3,12 +3,13 @@ import {
   ConflictException,
   UnauthorizedException,
   Logger,
+  NotFoundException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
-import { PrismaService } from '../prisma/prisma.service';
+import { Prisma, Role, User, Organization } from '@prisma/client';
+import { PrismaService } from '../common/prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
-import { Prisma, Role } from '@prisma/client';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 
@@ -22,119 +23,131 @@ export class AuthService {
     private readonly audit: AuditService,
   ) {}
 
+  
   async register(dto: RegisterDto) {
-    const normalizedEmail = dto.email.toLowerCase().trim();
-    const existing = await this.prisma.user.findUnique({
-      where: { email: normalizedEmail },
-    });
+    const email = dto.email.toLowerCase().trim();
 
+    
+    const existing = await this.prisma.user.findUnique({ where: { email } });
     if (existing) {
-      throw new ConflictException('This email address is already in use.');
+      throw new ConflictException('Bu e-posta adresi zaten kullanımda.');
     }
+
     const passwordHash = await bcrypt.hash(dto.password, 12);
 
     try {
-      const result = await this.prisma.$transaction(async (tx) => {
-        const org = await tx.organization.create({
+      
+      const { user, org } = await this.prisma.$transaction(async (tx) => {
+        const newOrg = await tx.organization.create({
           data: {
             name:
               dto.orgName ||
-              `${dto.name || normalizedEmail.split('@')[0]}'s Organization`,
+              `${dto.name || email.split('@')[0]}'s Organization`,
             plan: 'FREE',
             queriesLimit: 10,
           },
         });
 
-        const user = await tx.user.create({
+        const newUser = await tx.user.create({
           data: {
-            email: normalizedEmail,
+            email,
             passwordHash,
             name: dto.name,
-            orgId: org.id,
-            role: Role.ADMIN,
+            orgId: newOrg.id,
+            role: Role.ADMIN, 
           },
         });
 
-        return { user, org };
+        return { user: newUser, org: newOrg };
       });
 
+      
       await this.audit.log({
         action: 'USER_REGISTERED',
-        actorId: result.user.id,
-        orgId: result.org.id,
-        metadata: { email: normalizedEmail, orgName: result.org.name },
+        actorId: user.id,
+        orgId: org.id,
+        metadata: { email, orgName: org.name },
       });
 
-      const token = this.signToken(
-        result.user.id,
-        result.user.email,
-        result.org.id,
-        result.user.role,
-      );
-
-      return {
-        token,
-        user: this.formatUserResponse(result.user, result.org),
-      };
+      const token = this.signToken(user.id, user.email, org.id, user.role);
+      return { token, user: this.formatUserResponse(user, org) };
     } catch (error) {
       if (
         error instanceof Prisma.PrismaClientKnownRequestError &&
         error.code === 'P2002'
       ) {
-        throw new ConflictException('This email address is already in use.');
+        throw new ConflictException('Bu e-posta adresi zaten kullanımda.');
       }
+      this.logger.error('Kayıt işlemi sırasında beklenmedik hata:', error);
       throw error;
     }
   }
 
+  
   async login(dto: LoginDto) {
-    const normalizedEmail = dto.email.toLowerCase().trim();
-    const authErrorMsg = 'Invalid email or password.';
+    const email = dto.email.toLowerCase().trim();
+    const invalidMsg = 'Geçersiz e-posta veya şifre.';
+
     const user = await this.prisma.user.findUnique({
-      where: { email: normalizedEmail },
+      where: { email },
       include: { organization: true },
     });
 
-    if (!user) {
-      throw new UnauthorizedException(authErrorMsg);
+    
+    if (!user || !user.isActive) {
+      this.logger.warn(
+        `Giriş başarısız (Kullanıcı bulunamadı veya pasif): ${email}`,
+      );
+      throw new UnauthorizedException(invalidMsg);
     }
 
-    const valid = await bcrypt.compare(dto.password, user.passwordHash);
-    if (!valid) {
-      this.logger.warn(`Failed login attempt for email: ${normalizedEmail}`);
-      throw new UnauthorizedException(authErrorMsg);
+    
+    const isPasswordValid = await bcrypt.compare(
+      dto.password,
+      user.passwordHash,
+    );
+    if (!isPasswordValid) {
+      this.logger.warn(`Hatalı şifre denemesi: ${email}`);
+      throw new UnauthorizedException(invalidMsg);
     }
 
-    if (!user.orgId || !user.organization) {
+    
+    if (!user.organization) {
       throw new UnauthorizedException(
-        'User is not linked to any organization.',
+        'Kullanıcı bir organizasyona bağlı değil.',
       );
     }
 
+    
     await this.audit.log({
       action: 'USER_LOGIN',
       actorId: user.id,
-      orgId: user.orgId,
-      metadata: { ip: 'logged_session' },
+      orgId: user.organization.id,
+      metadata: { method: 'JWT_LOGIN' },
     });
 
-    const token = this.signToken(user.id, user.email, user.orgId, user.role);
-
-    return {
-      token,
-      user: this.formatUserResponse(user, user.organization),
-    };
+    const token = this.signToken(
+      user.id,
+      user.email,
+      user.organization.id,
+      user.role,
+    );
+    return { token, user: this.formatUserResponse(user, user.organization) };
   }
 
+  
   async getMe(userId: string) {
-    const user = await this.prisma.user.findUniqueOrThrow({
+    const user = await this.prisma.user.findUnique({
       where: { id: userId },
       include: { organization: true },
     });
 
+    if (!user) throw new NotFoundException('Kullanıcı bulunamadı.');
+
     return this.formatUserResponse(user, user.organization!);
   }
 
+  
   private signToken(
     userId: string,
     email: string,
@@ -144,20 +157,21 @@ export class AuthService {
     return this.jwtService.sign({ sub: userId, email, orgId, role });
   }
 
-  private formatUserResponse(user: any, org: any) {
+  
+  private formatUserResponse(user: User, org: Organization) {
     return {
       id: user.id,
       email: user.email,
       name: user.name,
       role: user.role,
       mustChangePassword: user.mustChangePassword,
-      org: {
+      organization: {
         id: org.id,
         name: org.name,
         plan: org.plan,
         queriesUsed: org.queriesUsed,
         queriesLimit: org.queriesLimit,
-        isLifetime: org.isLifetime,
+        isUnlimited: org.isUnlimited,
       },
     };
   }

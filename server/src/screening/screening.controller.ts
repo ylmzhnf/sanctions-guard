@@ -9,15 +9,14 @@ import {
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiBody } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { RiskLevel } from '@prisma/client';
 
-import { ScreenQueryDto } from './dto/screen-query.dto';
-import { BulkScreenDto } from './dto/bulk-screen.dto';
+import { ScreenQueryDto, BulkScreenDto } from './dto/query-bulk-screening.dto';
 import { JwtGuard } from '../auth/guard/jwt.guard';
-import { PlanGuard } from '../auth/guard/plan.guard';
 import { GetUser } from '../auth/decorator/get-user.decorator';
-import { AuditInterceptor } from '../common/interceptors/audit.interceptor';
+import { AuditInterceptor } from '../audit/interceptors/audit.interceptor';
 import { ScreeningService } from './screening.service';
 import { ReportsService } from './reports.service';
 
@@ -26,6 +25,8 @@ interface RequestUser {
   orgId: string;
 }
 
+@ApiTags('Screening')
+@ApiBearerAuth()
 @UseGuards(JwtGuard)
 @Controller('screening')
 export class ScreeningController {
@@ -35,9 +36,11 @@ export class ScreeningController {
   ) {}
 
   @Post('screen')
-  @UseGuards(PlanGuard)
-  @UseInterceptors(AuditInterceptor)
+  @UseInterceptors(AuditInterceptor) 
+  @ApiOperation({ summary: 'Tekil bir kişi veya kurumu yaptırım listelerinde tarar' })
+  @ApiBody({ schema: { example: { queryName: 'Viktor Bout', entityType: 'INDIVIDUAL' } } })
   async screen(@Body() dto: ScreenQueryDto, @GetUser() user: RequestUser) {
+    
     const result = await this.screeningService.screen(dto, user.id, user.orgId);
 
     if (!result.matches || result.matches.length === 0) {
@@ -54,8 +57,7 @@ export class ScreeningController {
 
     const formattedResults = result.matches.map((item) => ({
       ...item,
-      score:
-        typeof item.score === 'number' ? Math.round(item.score) : item.score,
+      score: item.score / 100,
     }));
 
     return {
@@ -70,11 +72,13 @@ export class ScreeningController {
   }
 
   @Post('bulk')
+  @ApiOperation({ summary: 'Toplu tarama işlemini arka plan kuyruğuna (BullMQ) ekler' })
   async bulkScreen(@Body() dto: BulkScreenDto, @GetUser() user: RequestUser) {
     return this.screeningService.bulkScreen(dto, user.id, user.orgId);
   }
 
   @Get('history')
+  @ApiOperation({ summary: 'Kurumun geçmiş tarama sorgularını getirir' })
   async history(
     @GetUser() user: RequestUser,
     @Query('page') page?: string,
@@ -82,24 +86,22 @@ export class ScreeningController {
     @Query('riskLevel') riskLevel?: RiskLevel,
     @Query('queryName') queryName?: string,
   ) {
-    const parsedPage = page ? parseInt(page, 10) : 1;
-    const parsedLimit = limit ? parseInt(limit, 10) : 20;
-
     return this.screeningService.getHistory(
       user.orgId,
-      parsedPage,
-      parsedLimit,
+      page ? parseInt(page, 10) : 1,
+      limit ? parseInt(limit, 10) : 20,
       { riskLevel, queryName },
     );
   }
 
   @Get('download-report/:id')
+  @ApiOperation({ summary: 'Tarama sonucunu PDF olarak indirir' })
   async downloadReport(@Param('id') id: string, @Res() res: Response) {
     const buffer = await this.reportsService.generateScreeningReport(id);
 
     res.set({
       'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename=screening-report-${id}.pdf`,
+      'Content-Disposition': `attachment; filename=sanctions-report-${id}.pdf`,
       'Content-Length': buffer.length.toString(),
     });
 

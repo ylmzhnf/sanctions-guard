@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import PDFDocument from 'pdfkit';
-import { PrismaService } from '../prisma/prisma.service';
+import { PrismaService } from '../common/prisma/prisma.service';
 import { RiskLevel } from '@prisma/client';
 
 @Injectable()
@@ -10,20 +10,14 @@ export class ReportsService {
   constructor(private prisma: PrismaService) {}
 
   private getRiskColor(riskLevel: RiskLevel): string {
-    switch (riskLevel) {
-      case RiskLevel.CRITICAL:
-        return '#DC2626';
-      case RiskLevel.HIGH:
-        return '#EA580C';
-      case RiskLevel.MEDIUM:
-        return '#CA8A04';
-      case RiskLevel.LOW:
-        return '#2563EB';
-      case RiskLevel.CLEAR:
-        return '#16A34A';
-      default:
-        return '#4B5563';
-    }
+    const colors = {
+      CRITICAL: '#DC2626',
+      HIGH: '#EA580C',
+      MEDIUM: '#CA8A04',
+      LOW: '#2563EB',
+      CLEAR: '#16A34A',
+    };
+    return colors[riskLevel] || '#4B5563';
   }
 
   async generateScreeningReport(queryId: string): Promise<Buffer> {
@@ -36,30 +30,16 @@ export class ReportsService {
       },
     });
 
-    if (!query) {
+    if (!query)
       throw new NotFoundException(`Report with ID ${queryId} not found`);
-    }
 
     return new Promise((resolve, reject) => {
-      const doc = new PDFDocument({
-        margin: 50,
-        size: 'A4',
-        info: {
-          Title: `Sanctions Report - ${query.queryName}`,
-          Author: 'Sanctions-Guard',
-        },
-      });
-
+      const doc = new PDFDocument({ margin: 50, size: 'A4' });
       const buffers: Buffer[] = [];
 
       doc.on('data', buffers.push.bind(buffers));
       doc.on('end', () => resolve(Buffer.concat(buffers)));
-      doc.on('error', (err) => {
-        this.logger.error(
-          `PDF Generation failed for ${queryId}: ${err.message}`,
-        );
-        reject(err);
-      });
+      doc.on('error', (err) => reject(err));
 
       
       doc
@@ -85,25 +65,18 @@ export class ReportsService {
 
       const requesterInfo = query.user
         ? query.user.name || query.user.email
-        : 'System / API Integration';
+        : 'API Integration';
 
       doc.fontSize(12).fillColor('#374151');
       doc
         .text(`Query Name: `, { continued: true })
         .fillColor('#000000')
         .text(query.queryName);
-
       doc
         .fillColor('#374151')
         .text(`Risk Level: `, { continued: true })
         .fillColor(this.getRiskColor(query.riskLevel ?? RiskLevel.CLEAR))
         .text(query.riskLevel ?? RiskLevel.CLEAR);
-
-      doc
-        .fillColor('#374151')
-        .text(`Total Matches: `, { continued: true })
-        .fillColor('#000000')
-        .text(query.matchCount.toString());
       doc
         .fillColor('#374151')
         .text(`Organization: `, { continued: true })
@@ -130,6 +103,7 @@ export class ReportsService {
         doc.moveDown(1.5);
       }
 
+      
       if (query.matches.length > 0) {
         doc
           .fontSize(14)
@@ -138,15 +112,13 @@ export class ReportsService {
         doc.moveDown(0.5);
 
         query.matches.forEach((m, i) => {
-          const score =
-            typeof m.similarityScore === 'number'
-              ? m.similarityScore.toFixed(1)
-              : m.similarityScore;
+          
+          const percentage = (m.similarityScore * 100).toFixed(1);
 
           doc
             .fontSize(11)
             .fillColor('#111827')
-            .text(`${i + 1}. ${m.matchedName} (%${score} match)`);
+            .text(`${i + 1}. ${m.matchedName} (${percentage}% match)`);
           doc
             .fontSize(9)
             .fillColor('#6B7280')
@@ -166,33 +138,12 @@ export class ReportsService {
         doc.moveDown(0.5);
 
         if (osint.news?.length > 0) {
-          doc.fontSize(11).fillColor('#374151').text('Recent News & Articles:');
-          doc.moveDown(0.3);
+          doc.fontSize(11).fillColor('#374151').text('Recent News Mentions:');
           osint.news.slice(0, 3).forEach((n: any) => {
             doc
               .fontSize(9)
               .fillColor('#2563EB')
               .text(`• ${n.title}`, { link: n.link, underline: true });
-            doc.moveDown(0.3);
-          });
-        }
-
-        doc.moveDown(0.5);
-
-        if (osint.social?.length > 0) {
-          doc
-            .fontSize(11)
-            .fillColor('#374151')
-            .text('Social Media & Web Mentions:');
-          doc.moveDown(0.3);
-          osint.social.slice(0, 3).forEach((s: any) => {
-            doc
-              .fontSize(9)
-              .fillColor('#2563EB')
-              .text(`• [${s.platform}] ${s.title}`, {
-                link: s.link,
-                underline: true,
-              });
             doc.moveDown(0.3);
           });
         }
@@ -205,9 +156,8 @@ export class ReportsService {
         .fontSize(8)
         .fillColor('#9CA3AF')
         .text(
-          'DISCLAIMER: This report is for informational purposes only and does not constitute legal advice. ' +
-            'Results should be verified against official government sanctions lists. ' +
-            'Generated by Sanctions-Guard Compliance Platform.',
+          'DISCLAIMER: This report is for informational purposes only. Results must be verified against official lists. ' +
+            `Generated securely by Sanctions-Guard for ${query.org.name}.`,
           { align: 'center' },
         );
 

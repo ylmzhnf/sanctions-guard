@@ -11,67 +11,120 @@ export class OfacProvider extends BaseSyncProvider {
   readonly sourceName = ListSource.OFAC;
 
   async fetchAndParse(): Promise<ParsedEntity[]> {
-    this.logger.log(`Downloading OFAC SDN list...`);
+    this.logger.log(`Downloading OFAC SDN list from ${OFAC_SDN_URL}...`);
 
-    const xmlData = await this.fetchXmlWithRetry(OFAC_SDN_URL);
+    try {
+      const xmlData = await this.fetchXmlWithRetry(OFAC_SDN_URL);
+      
+      if (!xmlData || xmlData.trim().length === 0) {
+        throw new Error('Empty XML response received from OFAC');
+      }
 
-    const parser = new XMLParser({
-      ignoreAttributes: true,
-      parseTagValue: false,
-    });
+      const parser = new XMLParser({
+        ignoreAttributes: true,
+        parseTagValue: false,
+        trimValues: true,
+      });
 
-    const jsonData = parser.parse(xmlData);
-    const entities = this.parseXml(jsonData);
+      let jsonData;
+      try {
+        jsonData = parser.parse(xmlData);
+      } catch (parseError: any) {
+        this.logger.error(`XML parsing failed: ${parseError.message}`);
+        throw new Error(`Failed to parse OFAC XML: ${parseError.message}`);
+      }
 
-    this.logger.log(
-      `Successfully parsed ${entities.length} entities from OFAC`,
-    );
-    return entities;
+      if (!jsonData) {
+        throw new Error('Parsed JSON data is null or undefined');
+      }
+
+      const entities = this.parseXml(jsonData);
+
+      this.logger.log(
+        `Successfully parsed ${entities.length} entities from OFAC`,
+      );
+      return entities;
+    } catch (error: any) {
+      this.logger.error(`OFAC fetch and parse failed: ${error.message}`);
+      throw error;
+    }
   }
 
   private parseXml(jsonData: any): ParsedEntity[] {
     const entities: ParsedEntity[] = [];
-    const sdnList = this.toArray(jsonData?.sdnList?.sdnEntry);
+    
+    try {
+      if (!jsonData?.sdnList) {
+        this.logger.warn('No sdnList found in parsed JSON data');
+        return entities;
+      }
 
-    for (const entry of sdnList) {
-      if (!entry?.uid) continue;
+      const sdnList = this.toArray(jsonData.sdnList.sdnEntry);
+      
+      if (sdnList.length === 0) {
+        this.logger.warn('No sdnEntry found in sdnList');
+        return entities;
+      }
 
-      const name =
-        [entry.firstName || '', entry.lastName || '']
-          .filter(Boolean)
-          .join(' ')
-          .trim() ||
-        entry.sdnName ||
-        'Unknown';
+      this.logger.log(`Processing ${sdnList.length} SDN entries...`);
 
-      const entityType =
-        entry.sdnType === 'Individual' ? 'INDIVIDUAL' : 'ENTITY';
-      const programs = this.toArray(entry.programList?.program).map(String);
+      for (const entry of sdnList) {
+        try {
+          if (!entry?.uid) {
+            this.logger.debug('Skipping entry without UID');
+            continue;
+          }
 
-      const aliases = this.toArray(entry.akaList?.aka)
-        .map((aka) =>
-          [aka.firstName || '', aka.lastName || '']
-            .filter(Boolean)
-            .join(' ')
-            .trim(),
-        )
-        .filter((akaName) => akaName && akaName !== name);
+          const name =
+            [entry.firstName || '', entry.lastName || '']
+              .filter(Boolean)
+              .join(' ')
+              .trim() ||
+            entry.sdnName ||
+            'Unknown';
 
-      const country =
-        this.toArray(entry.nationalityList?.nationality)[0]?.country ||
-        this.toArray(entry.placeOfBirthList?.placeOfBirth)[0]?.country ||
-        null;
+          const entityType =
+            entry.sdnType === 'Individual' ? 'INDIVIDUAL' : 'ENTITY';
+          
+          const programs = this.toArray(entry.programList?.program)
+            .map(p => typeof p === 'string' ? p : String(p))
+            .filter(Boolean);
 
-      entities.push({
-        externalId: `OFAC-SDN-${entry.uid}`,
-        name,
-        aliases: Array.from(new Set(aliases)),
-        entityType,
-        listSource: this.sourceName,
-        country,
-        programs,
-        remarks: entry.remarks || null,
-      });
+          const aliases = this.toArray(entry.akaList?.aka)
+            .map((aka) => {
+              if (!aka) return '';
+              return [aka.firstName || '', aka.lastName || '']
+                .filter(Boolean)
+                .join(' ')
+                .trim();
+            })
+            .filter((akaName) => akaName && akaName !== name);
+
+          const country =
+            this.toArray(entry.nationalityList?.nationality)[0]?.country ||
+            this.toArray(entry.placeOfBirthList?.placeOfBirth)[0]?.country ||
+            null;
+
+          entities.push({
+            externalId: `OFAC-SDN-${entry.uid}`,
+            name,
+            aliases: Array.from(new Set(aliases)),
+            entityType,
+            listSource: this.sourceName,
+            country,
+            programs,
+            remarks: entry.remarks || null,
+          });
+        } catch (entryError: any) {
+          this.logger.warn(`Failed to process entry ${entry?.uid}: ${entryError.message}`);
+          continue;
+        }
+      }
+
+      this.logger.log(`Successfully processed ${entities.length} valid entities`);
+    } catch (error: any) {
+      this.logger.error(`XML parsing error: ${error.message}`);
+      throw new Error(`Failed to parse OFAC XML structure: ${error.message}`);
     }
 
     return entities;

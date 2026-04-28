@@ -1,11 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { AuditService } from './audit.service';
-import { PrismaService } from '../prisma/prisma.service';
+import { PrismaService } from '../common/prisma/prisma.service';
 
 describe('AuditService (HMAC Integrity & Security)', () => {
   let service: AuditService;
-  let dbMock: any = null; 
-
+  let dbMock: any = null;
 
   const mockPrisma = {
     auditLog: {
@@ -13,15 +12,15 @@ describe('AuditService (HMAC Integrity & Security)', () => {
         dbMock = { ...data };
         return Promise.resolve(dbMock);
       }),
-      findUniqueOrThrow: jest.fn().mockImplementation(() =>
-        Promise.resolve(dbMock),
-      ),
+      findUniqueOrThrow: jest
+        .fn()
+        .mockImplementation(() => Promise.resolve(dbMock)),
     },
   };
 
   beforeEach(async () => {
     process.env.AUDIT_LOG_SECRET = 'test-secret-key-12345';
-    
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AuditService,
@@ -30,7 +29,7 @@ describe('AuditService (HMAC Integrity & Security)', () => {
     }).compile();
 
     service = module.get<AuditService>(AuditService);
-    dbMock = null; 
+    dbMock = null;
   });
 
   it('should generate a 64-character SHA-256 integrity hash', async () => {
@@ -62,20 +61,19 @@ describe('AuditService (HMAC Integrity & Security)', () => {
       action: 'RISK_LEVEL_CHANGED',
       actorId: 'admin-1',
       orgId: 'org-1',
-      metadata: { from: 'HIGH', to: 'LOW' }
+      metadata: { from: 'HIGH', to: 'LOW' },
     });
 
-    
-    dbMock.metadata = { from: 'HIGH', to: 'CRITICAL' }; 
+    dbMock.metadata = { from: 'HIGH', to: 'CRITICAL' };
 
     const { valid } = await service.verifyLog(dbMock.id);
     expect(valid).toBe(false);
   });
 
   it('should detect tampering when the hash itself is modified', async () => {
-    await service.log({ 
-      action: 'DELETE_QUERY', 
-      actorId: 'u-1', 
+    await service.log({
+      action: 'DELETE_QUERY',
+      actorId: 'u-1',
       orgId: 'o-1',
       metadata: { queryId: 'q-100' },
     });

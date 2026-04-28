@@ -15,11 +15,13 @@ import {
   Download,
   Newspaper,
   Globe,
+  FileSpreadsheet,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import api from "@/lib/api"; 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
+import { useFeatureFlags } from "@/hooks/useFeatureFlags";
 
 const SOURCE_LABELS: Record<string, string> = {
   OFAC: "OFAC (US)",
@@ -31,7 +33,7 @@ const SOURCE_LABELS: Record<string, string> = {
 
 const formatScore = (score: number | string) => {
   const num = typeof score === "string" ? parseFloat(score) : score;
-  return `${Math.round(num)}%`;
+  return `${(num * 100).toFixed(1)}%`;
 };
 
 type ScreeningResult = {
@@ -62,6 +64,7 @@ function SearchContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const queryClient = useQueryClient();
+  const { allFeaturesUnlocked, aiExplanationEnabled, osintEnabled, bulkScreeningEnabled, isSaas } = useFeatureFlags();
 
   const [name, setName] = useState(searchParams.get("name") || "");
   const [entityType, setEntityType] = useState("");
@@ -83,9 +86,9 @@ function SearchContent() {
       return response.data as ScreeningResult;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["current-user-status"] });
+      queryClient.invalidateQueries({ queryKey: ["current-user"] });
+      queryClient.invalidateQueries({ queryKey: ["recent-screenings"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard-logs"] });
-      queryClient.invalidateQueries({ queryKey: ["org-status"] });
     },
     onError: (err: any) => {
       if (err.response?.status === 403) {
@@ -135,9 +138,9 @@ function SearchContent() {
     const level = risk?.toUpperCase();
     if (["CRITICAL", "EXACT MATCH", "HIGH"].includes(level))
       return {
-        color: "text-destructive",
-        variant: "destructive",
-        bg: "bg-destructive/10 border-destructive/30",
+        color: "text-red-500",
+        variant: "critical",
+        bg: "bg-red-500/10 border-red-500/30",
       };
     if (level === "MEDIUM")
       return {
@@ -148,12 +151,12 @@ function SearchContent() {
     if (level === "LOW")
       return {
         color: "text-blue-500",
-        variant: "secondary",
+        variant: "outline",
         bg: "bg-blue-500/10 border-blue-500/30",
       };
     return {
       color: "text-emerald-500",
-      variant: "outline",
+      variant: "clear",
       bg: "bg-emerald-500/10 border-emerald-500/30",
     };
   };
@@ -211,6 +214,23 @@ function SearchContent() {
               {isSearching ? <Loader2 className="w-5 h-5 animate-spin" /> : <Search className="w-5 h-5" />}
               {isSearching ? "Screening..." : "Screen Now"}
             </button>
+            
+            <button
+              type="button"
+              onClick={() => {
+                if (bulkScreeningEnabled || allFeaturesUnlocked) {
+                  router.push("/dashboard/search/bulk");
+                } else if (isSaas) {
+                  router.push("/dashboard/billing");
+                }
+              }}
+              disabled={isSearching}
+              className="bg-secondary text-secondary-foreground hover:bg-muted border border-border px-6 py-4 rounded-xl font-bold transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-sm min-w-[140px]"
+            >
+              <FileSpreadsheet className="w-4 h-4" />
+              Batch
+              {!(bulkScreeningEnabled || allFeaturesUnlocked) && <Lock className="w-3 h-3 ml-1 text-amber-500" />}
+            </button>
           </div>
         </form>
 
@@ -225,7 +245,7 @@ function SearchContent() {
               {error.type === "LIMIT" ? <ShieldAlert className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
               <p className="text-sm font-semibold">{error.message}</p>
             </div>
-            {error.type === "LIMIT" && (
+            {error.type === "LIMIT" && isSaas && (
               <button
                 onClick={() => router.push("/dashboard/billing")}
                 className="bg-destructive text-white px-6 py-2 rounded-lg font-bold text-xs shadow-md hover:opacity-90 transition-all whitespace-nowrap"
@@ -285,61 +305,88 @@ function SearchContent() {
                 </div>
               </div>
 
-              {result.aiExplanation && (
-                <div className="bg-card rounded-3xl border border-border overflow-hidden shadow-xl">
-                  <div className="p-5 border-b border-border bg-primary/5 flex items-center gap-2">
-                    <BrainCircuit className="w-5 h-5 text-primary" />
-                    <h2 className="font-bold text-foreground text-xs uppercase tracking-widest">AI Contextual Analysis</h2>
-                  </div>
-                  <div className="p-8">
-                    <p className="text-foreground/90 text-sm leading-relaxed whitespace-pre-wrap italic">
-                      "{result.aiExplanation}"
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {result.osintResults && (result.osintResults.news?.length > 0 || result.osintResults.social?.length > 0) && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="bg-card rounded-2xl border border-border p-6 shadow-lg">
-                    <h2 className="font-bold text-foreground mb-4 flex items-center gap-2">
-                      <Newspaper className="w-5 h-5 text-blue-500" /> Recent News
-                    </h2>
-                    <div className="space-y-4">
-                      {result.osintResults.news.slice(0, 3).map((item, i) => (
-                        <div key={i} className="group">
-                          <a href={item.link} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-blue-600 hover:underline line-clamp-2">
-                            {item.title}
-                          </a>
-                          <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
-                            <span className="font-medium">{item.source}</span>
-                            <span>•</span>
-                            <span>{item.date}</span>
-                          </div>
-                        </div>
-                      ))}
+              {(aiExplanationEnabled || allFeaturesUnlocked) ? (
+                result.aiExplanation && (
+                  <div className="bg-card rounded-3xl border border-border overflow-hidden shadow-xl">
+                    <div className="p-5 border-b border-border bg-primary/5 flex items-center gap-2">
+                      <BrainCircuit className="w-5 h-5 text-primary" />
+                      <h2 className="font-bold text-foreground text-xs uppercase tracking-widest">AI Contextual Analysis</h2>
+                    </div>
+                    <div className="p-8">
+                      <p className="text-foreground/90 text-sm leading-relaxed whitespace-pre-wrap italic">
+                        "{result.aiExplanation}"
+                      </p>
                     </div>
                   </div>
-
-                  <div className="bg-card rounded-2xl border border-border p-6 shadow-lg">
-                    <h2 className="font-bold text-foreground mb-4 flex items-center gap-2">
-                      <Globe className="w-5 h-5 text-purple-500" /> Social & Web
-                    </h2>
-                    <div className="space-y-4">
-                      {result.osintResults.social.slice(0, 3).map((item, i) => (
-                        <div key={i} className="group">
-                          <a href={item.link} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-blue-600 hover:underline line-clamp-2">
-                            {item.title}
-                          </a>
-                          <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
-                            <span className="bg-secondary px-2 py-0.5 rounded text-[10px] uppercase font-bold tracking-wider">{item.platform}</span>
-                          </div>
-                        </div>
-                      ))}
+                )
+              ) : isSaas ? (
+                <div className="bg-card rounded-3xl border border-border overflow-hidden shadow-sm p-6 flex flex-col md:flex-row items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="bg-muted p-2 rounded-full"><BrainCircuit className="w-5 h-5 text-muted-foreground" /></div>
+                    <div>
+                      <h3 className="font-bold text-sm">AI Resolution Matrix Locked</h3>
+                      <p className="text-xs text-muted-foreground">Upgrade your plan to unlock automated false-positive reduction.</p>
                     </div>
                   </div>
+                  <button onClick={() => router.push("/dashboard/billing")} className="bg-primary text-primary-foreground px-4 py-2 rounded-lg text-xs font-bold whitespace-nowrap">
+                    Upgrade to Unlock
+                  </button>
                 </div>
-              )}
+              ) : null}
+
+              {(osintEnabled || allFeaturesUnlocked) ? (
+                result.osintResults && (result.osintResults.news?.length > 0 || result.osintResults.social?.length > 0) && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="bg-card rounded-2xl border border-border p-6 shadow-lg">
+                      <h2 className="font-bold text-foreground mb-4 flex items-center gap-2">
+                        <Newspaper className="w-5 h-5 text-blue-500" /> Recent News
+                      </h2>
+                      <div className="space-y-4">
+                        {result.osintResults.news.slice(0, 3).map((item, i) => (
+                          <div key={i} className="group">
+                            <a href={item.link} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-blue-600 hover:underline line-clamp-2">
+                              {item.title}
+                            </a>
+                            <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
+                              <span className="font-medium">{item.source}</span>
+                              <span>•</span>
+                              <span>{item.date}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="bg-card rounded-2xl border border-border p-6 shadow-lg">
+                      <h2 className="font-bold text-foreground mb-4 flex items-center gap-2">
+                        <Globe className="w-5 h-5 text-purple-500" /> Social & Web
+                      </h2>
+                      <div className="space-y-4">
+                        {result.osintResults.social.slice(0, 3).map((item, i) => (
+                          <div key={i} className="group">
+                            <a href={item.link} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-blue-600 hover:underline line-clamp-2">
+                              {item.title}
+                            </a>
+                            <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
+                              <span className="bg-secondary px-2 py-0.5 rounded text-[10px] uppercase font-bold tracking-wider">{item.platform}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )
+              ) : isSaas ? (
+                 <div className="bg-card rounded-2xl border border-border p-5 shadow-sm flex items-center justify-between gap-4">
+                   <div className="flex items-center gap-3">
+                     <Globe className="w-5 h-5 text-muted-foreground" />
+                     <p className="text-sm font-semibold">Web Intelligence (OSINT) is disabled.</p>
+                   </div>
+                   <button onClick={() => router.push("/dashboard/billing")} className="text-xs font-bold text-primary hover:underline flex items-center gap-1">
+                     <Lock className="w-3 h-3" /> Upgrade
+                   </button>
+                 </div>
+              ) : null}
 
               {result.data && result.data.length > 0 && (
                 <div className="bg-card rounded-2xl border border-border overflow-hidden shadow-lg">
@@ -359,13 +406,13 @@ function SearchContent() {
                       <tbody className="divide-y divide-border">
                         {result.data.map((m) => {
                           const scoreNum = typeof m.score === "string" ? parseFloat(m.score) : m.score;
-                          const isHighMatch = scoreNum >= 85;
+                          const isHighMatch = scoreNum >= 0.85;
 
                           return (
                             <tr key={m.id} className="hover:bg-secondary/30 transition-colors">
                               <td className="px-6 py-4 font-bold text-foreground text-sm">{m.matchedName}</td>
                               <td className="px-6 py-4 text-center">
-                                <Badge variant={isHighMatch ? "destructive" : "secondary"} className="font-mono text-xs shadow-sm">
+                                <Badge variant={isHighMatch ? "critical" : "outline"} className="font-mono text-xs shadow-sm">
                                   {formatScore(m.score)}
                                 </Badge>
                               </td>
@@ -393,7 +440,12 @@ function SearchContent() {
 
 export default function SearchPage() {
   return (
-    <Suspense fallback={<div className="p-8 flex justify-center items-center h-64"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>}>
+    <Suspense fallback={
+      <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
+        <Loader2 className="w-10 h-10 animate-spin text-primary" />
+        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground animate-pulse">Initializing Interface...</p>
+      </div>
+    }>
       <SearchContent />
     </Suspense>
   );

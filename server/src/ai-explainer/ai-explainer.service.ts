@@ -18,37 +18,42 @@ export interface ExplainInput {
   provider: AiProvider;
 }
 
-@Injectable()
-export class AiExplainerService {
-  private readonly logger = new Logger(AiExplainerService.name);
+const LEGAL_FOOTER = '\n\n---\n⚠️ Automated analysis — not legal advice. HIGH/CRITICAL matches require qualified compliance review.';
 
-  private readonly SYSTEM_PROMPT = `You are a compliance analyst specializing in international sanctions.
+const SYSTEM_PROMPT = `You are a compliance analyst specializing in international sanctions.
 Your job is to write clear, professional risk explanations for sanctions screening matches.
 Format your response as 3 sections: 
 1. Risk Summary (Executive overview)
-2. Match Analysis (Detailed comparison of names/entities)
-3. Recommended Action (Next steps for compliance officer)
+2. Match Analysis (Detailed comparison)
+3. Recommended Action (Next steps)
 Be factual, concise, and professional. Never make definitive legal conclusions.
 Always recommend human review for HIGH or CRITICAL matches.
 Keep the total length under 300 words.`;
 
+@Injectable()
+export class AiExplainerService {
+  private readonly logger = new Logger(AiExplainerService.name);
+
   async explain(input: ExplainInput): Promise<string> {
     const apiKey = input.userApiKey;
 
+    
     if (!apiKey || apiKey.trim() === '') {
-      this.logger.warn(
-        `AI Analysis skipped: No API key found for ${input.provider}`,
-      );
-      return 'AI analysis is currently unavailable because no API key is configured in settings.';
+      this.logger.warn(`AI Analysis skipped: No API key found for ${input.provider}`);
+      return `AI analysis is currently unavailable because no API key is configured in settings.${LEGAL_FOOTER}`;
     }
 
     const userPrompt = this.buildUserPrompt(input);
 
+    
     try {
-      if (input.provider === AiProvider.ANTHROPIC) {
-        return await this.requestAnthropic(apiKey, userPrompt);
-      }
-      return await this.requestOpenAI(apiKey, userPrompt);
+      const explanation =
+        input.provider === AiProvider.ANTHROPIC
+          ? await this.requestAnthropic(apiKey, userPrompt)
+          : await this.requestOpenAI(apiKey, userPrompt);
+
+      
+      return explanation + LEGAL_FOOTER;
     } catch (err: any) {
       return this.handleAiError(err, input.provider);
     }
@@ -57,17 +62,28 @@ Keep the total length under 300 words.`;
   private buildUserPrompt(input: ExplainInput): string {
     const matchLines = input.matches
       .map((m, i) => {
-        const score = (m.similarityScore * 1).toFixed(1);
-        return `${i + 1}. Entity: "${m.matchedName}" | Match: %${score} | Source: ${m.listSource} | Type: ${m.entityType || 'N/A'}${m.country ? ` | Country: ${m.country}` : ''}`;
+        
+        const score = typeof m.similarityScore === 'number' && m.similarityScore <= 1
+          ? (m.similarityScore * 100).toFixed(1)
+          : Number(m.similarityScore).toFixed(1);
+
+        
+        const parts = [
+          `${i + 1}. Entity: "${m.matchedName}"`,
+          `Match: %${score}`,
+          `Source: ${m.listSource}`,
+          `Type: ${m.entityType || 'N/A'}`,
+        ];
+
+        
+        if (m.country) parts.push(`Country: ${m.country}`);
+        if (m.programs?.length) parts.push(`Programs: ${m.programs.join(', ')}`);
+
+        return parts.join(' | ');
       })
       .join('\n');
 
-    return `Screening query for: "${input.queryName}"
-Assessed Risk Level: ${input.riskLevel}
-Detected Matches:
-${matchLines}
-
-Please provide a professional risk analysis for these findings.`;
+    return `Screening query for: "${input.queryName}"\nAssessed Risk Level: ${input.riskLevel}\nDetected Matches:\n${matchLines}\n\nPlease provide a professional risk analysis for these findings.`;
   }
 
   private async requestOpenAI(apiKey: string, prompt: string): Promise<string> {
@@ -75,23 +91,21 @@ Please provide a professional risk analysis for these findings.`;
     const response = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
       messages: [
-        { role: 'system', content: this.SYSTEM_PROMPT },
+        { role: 'system', content: SYSTEM_PROMPT },
         { role: 'user', content: prompt },
       ],
       temperature: 0.3,
+      max_tokens: 400, 
     });
-    return response.choices[0].message.content || '';
+    return response.choices[0]?.message?.content || '';
   }
 
-  private async requestAnthropic(
-    apiKey: string,
-    prompt: string,
-  ): Promise<string> {
+  private async requestAnthropic(apiKey: string, prompt: string): Promise<string> {
     const anthropic = new Anthropic({ apiKey });
     const response = await anthropic.messages.create({
-      model: 'claude-3-5-sonnet-20240620',
-      max_tokens: 600,
-      system: this.SYSTEM_PROMPT,
+      model: 'claude-3-5-sonnet-latest', 
+      max_tokens: 400,
+      system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.3,
     });
@@ -101,15 +115,17 @@ Please provide a professional risk analysis for these findings.`;
   }
 
   private handleAiError(err: any, provider: AiProvider): string {
-    this.logger.error(`AI Analysis failed for ${provider}: ${err.message}`);
+    this.logger.error(`AI Analysis failed for ${provider}: ${err.message}`, err.stack);
+
+    let errorMsg = 'Automated risk analysis is temporarily unavailable. Please review matches manually.';
 
     if (err.status === 401) {
-      return `🚨 AI Error: The API Key for ${provider} is invalid. Please check your settings.`;
-    }
-    if (err.status === 429) {
-      return `🚨 AI Error: Rate limit or quota exceeded for ${provider}. Please check your billing.`;
+      errorMsg = `🚨 AI Error: The API Key for ${provider} is invalid. Please check your settings.`;
+    } else if (err.status === 429) {
+      errorMsg = `🚨 AI Error: Rate limit or quota exceeded for ${provider}. Please check your billing.`;
     }
 
-    return 'AI risk analysis is temporarily unavailable. Please review matches manually.';
+    
+    return errorMsg + LEGAL_FOOTER;
   }
 }

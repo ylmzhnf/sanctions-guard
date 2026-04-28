@@ -4,26 +4,18 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { randomUUID } from 'crypto';
 import { Prisma, RiskLevel, ScreeningStatus } from '@prisma/client';
 
-import { PrismaService } from '../prisma/prisma.service';
+import { PrismaService } from '../common/prisma/prisma.service';
 import { RedisService } from '../common/redis/redis.service';
 import { AuditService } from '../audit/audit.service';
 import { OsintService, OsintResult } from '../osint/osint.service';
 import { AiExplainerService } from '../ai-explainer/ai-explainer.service';
-import { ScreenQueryDto } from './dto/screen-query.dto';
+import { ScreenQueryDto } from './dto/query-bulk-screening.dto';
 
 const SIMILARITY_THRESHOLDS = {
   CRITICAL: 95,
   HIGH: 85,
   MEDIUM: 70,
   LOW: 50,
-};
-
-const PLAN_LIMITS: Record<string, number> = {
-  FREE: 10,
-  STARTER: 500,
-  BUSINESS: 1000000,
-  ENTERPRISE: 1000000,
-  SELF_HOSTED: 999999999,
 };
 
 @Injectable()
@@ -46,9 +38,8 @@ export class ScreeningService {
     if (s1.length === 0 || s2.length === 0) return 0;
     if (s1 === s2) return 100;
 
-    const matrix: number[][] = Array.from(
-      { length: s1.length + 1 },
-      (): number[] => Array.from({ length: s2.length + 1 }, (): number => 0),
+    const matrix: number[][] = Array.from({ length: s1.length + 1 }, () =>
+      Array.from({ length: s2.length + 1 }, () => 0),
     );
 
     for (let i = 0; i <= s1.length; i++) matrix[i][0] = i;
@@ -59,22 +50,61 @@ export class ScreeningService {
         if (s1[i - 1] === s2[j - 1]) {
           matrix[i][j] = matrix[i - 1][j - 1];
         } else {
-          matrix[i][j] =
-            Math.min(matrix[i - 1][j], matrix[i][j - 1], matrix[i - 1][j - 1]) +
-            1;
+          matrix[i][j] = Math.min(matrix[i - 1][j], matrix[i][j - 1], matrix[i - 1][j - 1]) + 1;
         }
       }
     }
+    
     const distance = matrix[s1.length][s2.length];
     const maxLength = Math.max(s1.length, s2.length);
-    return 100 - (distance * 100) / maxLength;
+    let score = 100 - (distance * 100) / maxLength;
+
+    if (s1.includes(s2) || s2.includes(s1)) {
+      const minLen = Math.min(s1.length, s2.length);
+      if (minLen >= 4) {
+        const lenRatio = minLen / maxLength;
+        const substringScore = 85 + (lenRatio * 15);
+        if (substringScore > score) {
+          score = substringScore;
+        }
+      }
+    }
+
+    const tokens1 = s1.split(/\s+/).filter((t) => t.length >= 2);
+    const tokens2 = s2.split(/\s+/).filter((t) => t.length >= 2);
+
+    if (tokens1.length >= 2 && tokens2.length >= 2) {
+      const shorter = tokens1.length <= tokens2.length ? tokens1 : tokens2;
+      const longer = tokens1.length <= tokens2.length ? tokens2 : tokens1;
+
+      const allTokensMatch = shorter.every((token) =>
+        longer.some(
+          (t) =>
+            t === token ||
+            t.startsWith(token) ||
+            token.startsWith(t) ||
+            (token.length >= 4 && t.includes(token)) ||
+            (t.length >= 4 && token.includes(t)),
+        ),
+      );
+
+      if (allTokensMatch) {
+        const tokenCoverage = shorter.length / longer.length;
+        const tokenScore = 85 + tokenCoverage * 14;
+        if (tokenScore > score) {
+          score = tokenScore;
+        }
+      }
+    }
+
+    return score;
   }
 
   private determineRiskLevel(score: number): RiskLevel {
     if (score >= SIMILARITY_THRESHOLDS.CRITICAL) return RiskLevel.CRITICAL;
     if (score >= SIMILARITY_THRESHOLDS.HIGH) return RiskLevel.HIGH;
     if (score >= SIMILARITY_THRESHOLDS.MEDIUM) return RiskLevel.MEDIUM;
-    if (score > SIMILARITY_THRESHOLDS.LOW) return RiskLevel.LOW;
+    if (score >= SIMILARITY_THRESHOLDS.LOW) return RiskLevel.LOW;
     return RiskLevel.CLEAR;
   }
 
@@ -91,75 +121,69 @@ export class ScreeningService {
       include: { settings: true },
     });
 
-    if (process.env.APP_MODE !== 'enterprise' && !org.isUnlimited) {
-      const limit = PLAN_LIMITS[org.plan] || 10;
-      if (org.queriesUsed >= limit) {
-        throw new ForbiddenException(
-          `Query limit reached for your ${org.plan} plan.`,
-        );
-      }
+    const isEnterprise = process.env.APP_MODE === 'enterprise';
+    const isUnlimited = isEnterprise || org.isUnlimited || org.queriesLimit === -1;
+
+    if (!isUnlimited && org.queriesUsed >= org.queriesLimit) {
+      throw new ForbiddenException(`Monthly query limit (${org.queriesLimit}) reached. Please upgrade your SaaS plan.`);
     }
 
-    const cacheKey = `screening:${orgId}:${queryName.replace(/\s+/g, '_')}:${entityType || 'ALL'}`;
-    const cached = await this.redis.get(cacheKey);
-    if (cached) return JSON.parse(cached);
+    const normalizedQuery = queryName.toLowerCase().replace(/\s+/g, '_');
+    const cacheKey = `screen:v3:${orgId}:${normalizedQuery}:${entityType || 'ALL'}`;
 
-    const candidates = entityType
-      ? await this.prisma.$queryRaw<any[]>`
+    const cached = await this.redis.get(cacheKey);
+    if (cached) return { ...JSON.parse(cached), fromCache: true };
+
+    const rawMatches = await this.prisma.$queryRaw<any[]>`
       SELECT 
-        id, "name", "aliases", "entityType", "country", "programs", "listSource",
-        GREATEST(
-          similarity("name", ${queryName}),
-          (SELECT MAX(similarity(a, ${queryName})) FROM unnest("aliases") a)
-        ) as raw_score
-      FROM "SanctionedEntity" 
+        id, name AS "searchName", "entityType", country, programs, "listSource", 'name' AS "field"
+      FROM "SanctionedEntity"
       WHERE "isActive" = true 
+        AND "listSource" IN ('OFAC', 'EU', 'UN', 'UK_HMT', 'CUSTOM', 'OTHER')
+        ${entityType ? Prisma.sql`AND "entityType" = ${entityType}` : Prisma.empty}
         AND (
-          "name" % ${queryName} 
-          OR 
-          EXISTS (SELECT 1 FROM unnest("aliases") a WHERE a % ${queryName})
+          similarity(name, ${queryName}) >= 0.15 
+          OR name ILIKE ${'%' + queryName + '%'}
         )
-        AND "entityType" = ${entityType}
-      ORDER BY raw_score DESC
-      LIMIT 50;
-    `
-      : await this.prisma.$queryRaw<any[]>`
+
+      UNION ALL
+
       SELECT 
-        id, "name", "aliases", "entityType", "country", "programs", "listSource",
-        GREATEST(
-          similarity("name", ${queryName}),
-          (SELECT MAX(similarity(a, ${queryName})) FROM unnest("aliases") a)
-        ) as raw_score
-      FROM "SanctionedEntity" 
+        id, a AS "searchName", "entityType", country, programs, "listSource", 'alias' AS "field"
+      FROM "SanctionedEntity", unnest("aliases") a
       WHERE "isActive" = true 
+        AND "listSource" IN ('OFAC', 'EU', 'UN', 'UK_HMT', 'CUSTOM', 'OTHER')
+        ${entityType ? Prisma.sql`AND "entityType" = ${entityType}` : Prisma.empty}
         AND (
-          "name" % ${queryName} 
-          OR 
-          EXISTS (SELECT 1 FROM unnest("aliases") a WHERE a % ${queryName})
+          similarity(a, ${queryName}) >= 0.15
+          OR a ILIKE ${'%' + queryName + '%'}
         )
-      ORDER BY raw_score DESC
       LIMIT 50;
     `;
 
-    const refineResults = candidates.map((entity: any) => {
-      let bestScore = this.calculateSimilarity(queryName, entity.name);
-      let matchedField = 'name';
-      let matchedName: string = entity.name;
+    const byEntity = new Map<string, any>();
 
-      (entity.aliases || []).forEach((alias: string) => {
-        const s = this.calculateSimilarity(queryName, alias);
-        if (s > bestScore) {
-          bestScore = s;
-          matchedName = alias;
-          matchedField = 'alias';
-        }
-      });
-      return { ...entity, score: bestScore, matchedName, matchedField };
-    });
+    for (const row of rawMatches) {
+      const exactScore = this.calculateSimilarity(queryName, row.searchName);
+      const existing = byEntity.get(row.id);
 
-    const threshold = org.settings?.aiThreshold || 45;
-    const topMatches = refineResults
-      .filter((r) => r.score > threshold)
+      if (!existing || exactScore > existing.score) {
+        byEntity.set(row.id, {
+          id: row.id,
+          matchedName: row.searchName,
+          matchedField: row.field,
+          entityType: row.entityType,
+          listSource: row.listSource,
+          country: row.country,
+          programs: row.programs,
+          score: exactScore,
+        });
+      }
+    }
+
+    const orgThreshold = org.settings?.aiThreshold || 50;
+    const topMatches = Array.from(byEntity.values())
+      .filter((m) => m.score >= orgThreshold)
       .sort((a, b) => b.score - a.score)
       .slice(0, 10);
 
@@ -167,23 +191,27 @@ export class ScreeningService {
     const riskLevel = this.determineRiskLevel(highestScore);
 
     let osintResults: OsintResult | null = null;
-    if (org.settings?.enableOsint !== false) {
+    let aiExplanation: string | null = null;
+
+    if (riskLevel !== RiskLevel.CLEAR && topMatches.length > 0) {
       try {
-        osintResults = await this.osint.fetchResults(queryName);
+        osintResults = await this.osint.fetchResults(
+          queryName,
+          highestScore / 100,
+          orgThreshold / 100,
+          org.settings?.osintApiKey || undefined,
+        );
       } catch (error) {
         this.logger.warn(`OSINT fetch failed for ${queryName}`);
       }
-    }
 
-    let aiExplanation: string | null = null;
-    if (riskLevel !== RiskLevel.CLEAR && topMatches.length > 0) {
       try {
         aiExplanation = await this.aiExplainer.explain({
           queryName,
           matches: topMatches.slice(0, 3).map((m) => ({
-            name: m.matchedName,
-            similarity: m.score,
-            source: m.listSource,
+            matchedName: m.matchedName,
+            similarityScore: m.score / 100,
+            listSource: m.listSource,
             entityType: m.entityType,
             country: m.country,
             programs: m.programs,
@@ -192,10 +220,8 @@ export class ScreeningService {
           userApiKey: org.settings?.aiApiKey || '',
           provider: org.settings?.aiProvider || 'OPENAI',
         });
-      } catch (error: unknown) {
-        const errorMessage =
-          error instanceof Error ? error.message : 'Unknown error';
-        this.logger.error(`AI Explanation failed: ${errorMessage}`);
+      } catch (error: any) {
+        this.logger.error(`AI Explanation failed: ${error.message}`);
         aiExplanation = 'AI explanation temporarily unavailable.';
       }
     }
@@ -206,18 +232,16 @@ export class ScreeningService {
           queryName,
           status: ScreeningStatus.COMPLETED,
           riskLevel,
-          matchedCount: topMatches.length,
+          matchCount: topMatches.length,
           aiExplanation,
-          osintResults: osintResults
-            ? (osintResults as Prisma.InputJsonValue)
-            : Prisma.JsonNull,
+          osintResults: osintResults ? (osintResults as any) : Prisma.JsonNull,
           userId,
           orgId,
           matches: {
             create: topMatches.map((m) => ({
               matchedEntityId: m.id,
               matchedName: m.matchedName,
-              similarityScore: m.score,
+              similarityScore: m.score / 100,
               matchedField: m.matchedField,
               listSource: m.listSource,
             })),
@@ -252,24 +276,19 @@ export class ScreeningService {
 
     await this.redis.set(cacheKey, JSON.stringify(finalResult), 3600);
 
-    return finalResult;
+    return { ...finalResult, fromCache: false };
   }
 
-  async bulkScreen(
-    dto: { names: string[]; entityType?: string },
-    userId: string,
-    orgId: string,
-  ) {
+  async bulkScreen(dto: { names: string[]; entityType?: string }, userId: string, orgId: string) {
     const org = await this.prisma.organization.findUniqueOrThrow({
       where: { id: orgId },
     });
 
-    if (process.env.APP_MODE !== 'enterprise' && !org.isUnlimited) {
-      if (org.plan !== 'BUSINESS' && org.plan !== 'ENTERPRISE') {
-        throw new ForbiddenException(
-          'Bulk screening is a Business/Enterprise feature.',
-        );
-      }
+    const isEnterprise = process.env.APP_MODE === 'enterprise';
+    const isUnlimited = isEnterprise || org.isUnlimited || org.queriesLimit === -1;
+
+    if (!isUnlimited && org.plan !== 'BUSINESS' && org.plan !== 'ENTERPRISE') {
+      throw new ForbiddenException('Bulk screening is a Business/Enterprise plan feature.');
     }
 
     const batchId = randomUUID();
@@ -295,21 +314,11 @@ export class ScreeningService {
     };
   }
 
-  async getHistory(
-    orgId: string,
-    page = 1,
-    limit = 20,
-    filters?: { riskLevel?: RiskLevel; queryName?: string },
-  ) {
+  async getHistory(orgId: string, page = 1, limit = 20, filters?: { riskLevel?: RiskLevel; queryName?: string }) {
     const where: Prisma.ScreeningQueryWhereInput = { orgId };
 
-    if (filters?.riskLevel) {
-      where.riskLevel = filters.riskLevel;
-    }
-
-    if (filters?.queryName) {
-      where.queryName = { contains: filters.queryName, mode: 'insensitive' };
-    }
+    if (filters?.riskLevel) where.riskLevel = filters.riskLevel;
+    if (filters?.queryName) where.queryName = { contains: filters.queryName, mode: 'insensitive' };
 
     const [queries, total] = await Promise.all([
       this.prisma.screeningQuery.findMany({
@@ -323,5 +332,16 @@ export class ScreeningService {
     ]);
 
     return { queries, total, page, pages: Math.ceil(total / limit) };
+  }
+
+  async clearCache(pattern: string = 'screen:*'): Promise<number> {
+    try {
+      await this.redis.delByPattern(pattern);
+      this.logger.log(`Cache cleared for pattern: ${pattern}`);
+      return 1;
+    } catch (error) {
+      this.logger.error(`Failed to clear cache: ${error}`);
+      return 0;
+    }
   }
 }

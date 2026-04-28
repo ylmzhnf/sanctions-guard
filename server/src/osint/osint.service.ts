@@ -1,17 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
-
-interface SerperNewsItem {
-  title: string;
-  link: string;
-  source: string;
-  date: string;
-}
-
-interface SerperOrganicItem {
-  title: string;
-  link: string;
-  snippet?: string;
-}
+import { ConfigService } from '@nestjs/config';
+import { getJson } from 'serpapi';
+import { RedisService } from '../common/redis/redis.service';
 
 export interface OsintResult {
   news: Array<{ title: string; link: string; source: string; date: string }>;
@@ -21,97 +11,174 @@ export interface OsintResult {
 @Injectable()
 export class OsintService {
   private readonly logger = new Logger(OsintService.name);
-  private readonly apiKey = process.env.SERPER_API_KEY;
+  private readonly APP_MODE: string;
 
-  async fetchResults(name: string): Promise<OsintResult> {
-    if (!this.apiKey) {
-      this.logger.warn('SERPER_API_KEY is not set. OSINT search skipped.');
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly redis: RedisService,
+  ) {
+    this.APP_MODE = this.configService.get<string>('APP_MODE') || 'saas';
+  }
+
+  async fetchResults(
+    name: string,
+    score: number,
+    threshold: number = 0.7,
+    osintApiKey?: string,
+  ): Promise<OsintResult> {
+    
+    if (score < threshold) {
       return { news: [], social: [] };
     }
 
+    const apiKey = osintApiKey || this.configService.get<string>('SERPAPI_KEY');
+    
+    // MİMARİYİ TEST EDEBİLMEN İÇİN MOCK (TEST) MODU
+    // Eğer API key yoksa veya geçersizse (test yazdıysan), sahte veri dönerek süreci devam ettirir.
+    if (!apiKey || apiKey === 'test' || apiKey.trim() === '') {
+      this.logger.warn(`SerpApi Key missing or set to test. Using MOCK OSINT data for: ${name}`);
+      return this.getMockData(name);
+    }
+
+    const safeName = name.toLowerCase().replace(/[^a-z0-9]/g, '_');
+    const cacheKey = `osint_cache:${safeName}`;
+
     try {
-      const [news, social] = await Promise.all([
-        this.searchNews(name),
-        this.searchSocial(name),
+      const cachedData = await this.redis.get(cacheKey);
+      if (cachedData) return JSON.parse(cachedData);
+    } catch (err: any) {
+      this.logger.warn(`Redis cache read failed for OSINT: ${err.message}`);
+    }
+
+    try {
+      this.logger.log(`Starting deep OSINT search for: ${name} (Mode: ${this.APP_MODE})`);
+
+      const [newsResults, socialResults] = await Promise.allSettled([
+        this.searchNews(name, apiKey),
+        this.searchSocial(name, apiKey),
       ]);
 
-      return { news, social };
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
-      this.logger.error(`OSINT search failed for ${name}: ${errorMessage}`);
-      return { news: [], social: [] };
+      const finalResult: OsintResult = {
+        news: newsResults.status === 'fulfilled' ? newsResults.value : [],
+        social: socialResults.status === 'fulfilled' ? socialResults.value : [],
+      };
+
+      if (finalResult.news.length > 0 || finalResult.social.length > 0) {
+        await this.redis.set(cacheKey, JSON.stringify(finalResult), 86400);
+      }
+
+      return finalResult;
+    } catch (err: any) {
+      this.logger.error(`Global OSINT failure for ${name}: ${err.message}`);
+      return this.getMockData(name); // Çökerse yine mock data dön
     }
   }
 
-  private async searchNews(query: string) {
+  /**
+   * ÇÖKMEYİ ENGELLEYEN YENİ YAPI
+   * Kütüphanenin gizli Promise'ini await ile yakalayıp catch bloğunda eziyoruz.
+   */
+  private async runSearch(params: any): Promise<any> {
     try {
-      const response = await fetch('https://google.serper.dev/news', {
-        method: 'POST',
-        headers: {
-          'X-API-KEY': this.apiKey as string,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ q: query, gl: 'us', hl: 'en' }),
+      // Callback YERİNE doğrudan await kullanıyoruz, böylece unhandled rejection oluşmaz
+      const response = await getJson(params);
+      
+      // Bazen hata 200 OK içinde JSON objesi olarak gelir
+      if (response?.error) {
+        throw new Error(`SerpApi Error: ${response.error}`);
+      }
+      return response;
+    } catch (err: any) {
+      // JSON stringify edilmiş hataları (senin aldığın hata gibi) güvenlice yakalarız
+      const errorMessage = typeof err === 'string' ? err : err.message || JSON.stringify(err);
+      throw new Error(errorMessage);
+    }
+  }
+
+  private async searchNews(query: string, apiKey: string) {
+    try {
+      const response = await this.runSearch({
+        engine: 'google_news',
+        q: query,
+        api_key: apiKey,
+        gl: 'us', 
       });
 
-      if (!response.ok) {
-        throw new Error(`News API returned status: ${response.status}`);
-      }
-
-      const data = await response.json();
-      const newsItems: SerperNewsItem[] = data.news || [];
-
-      return newsItems.slice(0, 5).map((item) => ({
+      return (response?.news_results || []).slice(0, 5).map((item: any) => ({
         title: item.title,
         link: item.link,
-        source: item.source,
-        date: item.date,
+        source: item.source?.name || 'Unknown',
+        date: item.date || 'Recent',
       }));
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
-      this.logger.error(`News search failed: ${errorMessage}`);
-      return [];
+    } catch (err: any) {
+      this.logger.warn(`News search failed (Falling back to empty/mock): ${err.message}`);
+      throw err; // Üstteki Promise.allSettled yakalayacak
     }
   }
 
-  private async searchSocial(query: string) {
+  private async searchSocial(query: string, apiKey: string) {
     try {
-      const socialQuery = `${query} site:twitter.com OR site:linkedin.com OR site:facebook.com OR site:instagram.com`;
+      const socialQuery = `"${query}" (site:twitter.com OR site:x.com OR site:linkedin.com OR site:facebook.com OR site:instagram.com)`;
 
-      const response = await fetch('https://google.serper.dev/search', {
-        method: 'POST',
-        headers: {
-          'X-API-KEY': this.apiKey as string,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ q: socialQuery, gl: 'us', hl: 'en' }),
+      const response = await this.runSearch({
+        engine: 'google',
+        q: socialQuery,
+        api_key: apiKey,
+        num: 10, 
       });
 
-      if (!response.ok) {
-        throw new Error(`Social API returned status: ${response.status}`);
-      }
-
-      const data = await response.json();
-      const organicItems: SerperOrganicItem[] = data.organic || [];
-
-      return organicItems.slice(0, 5).map((item) => {
-        let platform = 'Social Media';
-        if (item.link.includes('twitter.com') || item.link.includes('x.com'))
-          platform = 'Twitter/X';
-        else if (item.link.includes('linkedin.com')) platform = 'LinkedIn';
-        else if (item.link.includes('facebook.com')) platform = 'Facebook';
-        else if (item.link.includes('instagram.com')) platform = 'Instagram';
-
-        return {
-          title: item.title,
-          link: item.link,
-          platform,
-        };
-      });
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
-      this.logger.error(`Social search failed: ${errorMessage}`);
-      return [];
+      return (response?.organic_results || []).slice(0, 5).map((item: any) => ({
+        title: item.title,
+        link: item.link,
+        platform: this.identifyPlatform(item.link),
+      }));
+    } catch (err: any) {
+      this.logger.warn(`Social search failed (Falling back to empty/mock): ${err.message}`);
+      throw err;
     }
+  }
+
+  private identifyPlatform(url: string): string {
+    const lowerUrl = url.toLowerCase();
+    if (lowerUrl.includes('linkedin.com')) return 'LinkedIn';
+    if (lowerUrl.includes('twitter.com') || lowerUrl.includes('x.com')) return 'X / Twitter';
+    if (lowerUrl.includes('facebook.com')) return 'Facebook';
+    if (lowerUrl.includes('instagram.com')) return 'Instagram';
+    if (lowerUrl.includes('youtube.com')) return 'YouTube';
+    return 'Web Source';
+  }
+
+  /**
+   * Mimarinin çalıştığını kanıtlayan test verisi üretici
+   */
+  private getMockData(name: string): OsintResult {
+    return {
+      news: [
+        {
+          title: `[TEST DATA] Global sanctions review mentions ${name}`,
+          link: 'https://example.com/news/1',
+          source: 'Compliance Weekly',
+          date: new Date().toLocaleDateString(),
+        },
+        {
+          title: `[TEST DATA] Regulatory shifts impacting ${name} operations`,
+          link: 'https://example.com/news/2',
+          source: 'RegTech Insider',
+          date: '2 days ago',
+        }
+      ],
+      social: [
+        {
+          title: `[TEST DATA] LinkedIn Profile for ${name}`,
+          link: 'https://linkedin.com/in/sample',
+          platform: 'LinkedIn',
+        },
+        {
+          title: `[TEST DATA] Corporate updates regarding ${name}`,
+          link: 'https://x.com/sample',
+          platform: 'X / Twitter',
+        }
+      ]
+    };
   }
 }

@@ -1,6 +1,6 @@
 import { Controller, Get, Post, UseGuards } from '@nestjs/common';
-import { JwtGuard } from 'src/auth/guard/jwt.guard';
-import { PrismaService } from 'src/prisma/prisma.service';
+import { JwtGuard } from '../auth/guard/jwt.guard';
+import { PrismaService } from '../common/prisma/prisma.service';
 import { SanctionsSyncService } from './sanctions-sync.service';
 
 @Controller('admin/sanctions-sync')

@@ -5,8 +5,10 @@ import { EuProvider } from './providers/eu.provider';
 import { UnProvider } from './providers/un.provider';
 import { UkProvider } from './providers/uk.provider';
 import { SanctionSyncController } from './sanction-sync.controller';
+import { RedisModule } from '../common/redis/redis.module';
 
 @Module({
+  imports: [RedisModule],
   controllers: [SanctionSyncController],
   providers: [
     SanctionsSyncService,

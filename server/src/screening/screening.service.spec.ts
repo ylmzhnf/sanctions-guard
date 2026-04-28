@@ -4,7 +4,7 @@ import { getQueueToken } from '@nestjs/bullmq';
 import { RiskLevel, ScreeningStatus } from '@prisma/client';
 
 import { ScreeningService } from './screening.service';
-import { PrismaService } from '../prisma/prisma.service';
+import { PrismaService } from '../common/prisma/prisma.service';
 import { RedisService } from '../common/redis/redis.service';
 import { AiExplainerService } from '../ai-explainer/ai-explainer.service';
 import { AuditService } from '../audit/audit.service';
@@ -208,7 +208,7 @@ describe('ScreeningService', () => {
       const result = await service.bulkScreen(dto, 'u-1', 'o-1');
 
       expect(mockQueue.addBulk).toHaveBeenCalled();
-      expect(mockQueue.addBulk.mock.calls[0][0]).toHaveLength(2); 
+      expect(mockQueue.addBulk.mock.calls[0][0]).toHaveLength(2);
       expect(result.totalQueued).toBe(2);
       expect(result.message).toContain('kuyruğa alındı');
     });

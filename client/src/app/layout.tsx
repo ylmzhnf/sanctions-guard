@@ -6,7 +6,7 @@ import Providers from "./providers";
 const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],
-  display: "swap", 
+  display: "swap",
 });
 
 const geistMono = Geist_Mono({
@@ -15,33 +15,33 @@ const geistMono = Geist_Mono({
   display: "swap",
 });
 
+const APP_NAME = process.env.NEXT_PUBLIC_APP_NAME || "SanctionsGuard";
+
 export const viewport: Viewport = {
-  themeColor: "#000000",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f8fafc" },
+    { media: "(prefers-color-scheme: dark)", color: "#0f172a" },
+  ],
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
+  maximumScale: 5,
 };
 
 export const metadata: Metadata = {
-  title: "SanctionsGuard — Real-time Sanctions Screening",
-  description: "Advanced sanctions screening and compliance monitoring platform. Screen entities against OFAC, EU, and UN sanctions lists instantly with AI-powered risk explanations and immutable audit trails.",
-  keywords: ["sanctions screening", "AML", "compliance", "OFAC", "risk management", "AI screening"],
+  title: {
+    default: `${APP_NAME} — Real-time Compliance & Risk Screening`,
+    template: `%s | ${APP_NAME}`,
+  },
+  description: "Advanced sanctions screening platform. Screen entities against global watchlists with AI risk insights and immutable audit trails.",
   icons: {
-    icon: [
-      { url: "/favicon.svg", type: "image/svg+xml" },
-      { url: "/favicon.ico", sizes: "any" }
-    ],
+    icon: "/favicon.svg",
     apple: "/favicon.svg",
   },
 };
 
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning className="scroll-smooth">
       <body
         className={`${geistSans.variable} ${geistMono.variable} font-sans bg-background text-foreground antialiased min-h-screen flex flex-col`}
       >
