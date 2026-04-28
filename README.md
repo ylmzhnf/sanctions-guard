@@ -29,7 +29,8 @@ Sanctions-Guard screens entities (individuals, companies, vessels) against **OFA
 
 | Feature | SaaS | Enterprise |
 |---------|------|-----------|
-| Fuzzy matching (Fuse.js) | ✓ | ✓ |
+| Levenshtein + Token matching | ✓ | ✓ |
+| PostgreSQL trigram similarity | ✓ | ✓ |
 | AI risk explanations (Claude) | ✓ | ✓ |
 | HMAC-signed audit log | ✓ | ✓ |
 | Admin dashboard | ✓ | ✓ |
@@ -120,6 +121,50 @@ curl -X POST http://localhost:3001/api/v1/admin/sanctions-sync/trigger \
 
 ## Architecture
 
+### Matching Algorithm
+
+The platform uses a **hybrid multi-stage matching system** for maximum accuracy:
+
+**Stage 1: PostgreSQL Trigram Pre-filter**
+- Uses `pg_trgm` extension for fast similarity search
+- Threshold: `similarity(name, query) >= 0.15`
+- Returns top 50 candidates per query
+
+**Stage 2: Levenshtein Distance**
+- Calculates edit distance between query and candidate
+- Normalizes to 0-100 score
+- Handles typos and minor variations
+
+**Stage 3: Token-Based Matching**
+- Splits names into tokens (words)
+- Checks if all query tokens exist in target name
+- Handles cases like "Vladimir Putin" → "Vladimir Vladimirovich Putin"
+- Boosts score to 85-99 when all tokens match
+
+**Stage 4: Risk Classification**
+```
+Score ≥ 95% → CRITICAL (exact/near-exact match)
+Score ≥ 85% → HIGH (strong match, review required)
+Score ≥ 70% → MEDIUM (possible match)
+Score ≥ 50% → LOW (weak match, flag for awareness)
+Score < 50% → CLEAR (no significant match)
+```
+
+**Example:**
+```
+Query: "Vladimir Putin"
+Database: "VLADIMIR VLADIMIROVICH PUTIN"
+
+Stage 1: PostgreSQL trigram → 0.65 similarity → passes
+Stage 2: Levenshtein → 50% (length difference)
+Stage 3: Token match → ["vladimir", "putin"] all found → 94%
+Final Score: 94% → HIGH risk
+```
+
+---
+
+## Architecture
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                    Nginx (Port 80/443)                      │
@@ -162,8 +207,8 @@ Request → JwtAuthGuard → ModeGuard → QueryLimitGuard → Controller
 2. License check   → 9.  Write HMAC audit log
 3. Cache check     → 10. Cache result (1hr TTL)
 4. Load entities   → 11. Increment usage counter
-5. Build corpus    → 12. Return JSON response
-6. Fuzzy match     → 13. Frontend renders result
+5. PostgreSQL trgm → 12. Return JSON response
+6. Levenshtein+tok → 13. Frontend renders result
 7. Risk scoring    →
 ```
 
