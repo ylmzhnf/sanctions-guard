@@ -1,52 +1,110 @@
 import {
   Controller,
   Get,
+  Post,
+  Body,
   Query,
+  Param,
+  Res,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { SearchSanctionDto } from './dto/search-sanction.dto';
-import { ScreeningService } from './screening.service';
-import { JwtGuard } from 'src/auth/guard/jwt.guard';
-import { GetUser } from 'src/auth/decorator/get-user.decorator';
-import type { User } from '@prisma/client';
-import { AuditInterceptor } from 'src/common/interceptors/audit.interceptor';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiBody } from '@nestjs/swagger';
+import type { Response } from 'express';
+import { RiskLevel } from '@prisma/client';
 
+import { ScreenQueryDto, BulkScreenDto } from './dto/query-bulk-screening.dto';
+import { JwtGuard } from '../auth/guard/jwt.guard';
+import { GetUser } from '../auth/decorator/get-user.decorator';
+import { AuditInterceptor } from '../audit/interceptors/audit.interceptor';
+import { ScreeningService } from './screening.service';
+import { ReportsService } from './reports.service';
+
+interface RequestUser {
+  id: string;
+  orgId: string;
+}
+
+@ApiTags('Screening')
+@ApiBearerAuth()
 @UseGuards(JwtGuard)
-@UseInterceptors(AuditInterceptor)
 @Controller('screening')
 export class ScreeningController {
-  constructor(private readonly screeningService: ScreeningService) {}
-  @Get('search')
-  async search(@Query() query: SearchSanctionDto, @GetUser() user: any) {
-    const { results, queryId, riskLevel } = await this.screeningService.searchSanctionedNames(
-      query.queryName,
-      user.id,
-      user.orgId,
-    );
+  constructor(
+    private readonly screeningService: ScreeningService,
+    private readonly reportsService: ReportsService,
+  ) {}
 
-    if (!results || results.length === 0) {
+  @Post('screen')
+  @UseInterceptors(AuditInterceptor) 
+  @ApiOperation({ summary: 'Tekil bir kişi veya kurumu yaptırım listelerinde tarar' })
+  @ApiBody({ schema: { example: { queryName: 'Viktor Bout', entityType: 'INDIVIDUAL' } } })
+  async screen(@Body() dto: ScreenQueryDto, @GetUser() user: RequestUser) {
+    
+    const result = await this.screeningService.screen(dto, user.id, user.orgId);
+
+    if (!result.matches || result.matches.length === 0) {
       return {
         success: true,
         count: 0,
         message: 'No match found',
         data: [],
-        queryId,
-        riskLevel,
+        queryId: result.query?.id,
+        riskLevel: result.riskLevel,
+        osintResults: result.osintResults,
       };
     }
 
-    const formattedResults = results.map((item) => ({
+    const formattedResults = result.matches.map((item) => ({
       ...item,
-      score: Number(item.score.toFixed(2)),
+      score: item.score / 100,
     }));
 
     return {
       success: true,
       count: formattedResults.length,
       data: formattedResults,
-      queryId,
-      riskLevel,
+      queryId: result.query?.id,
+      riskLevel: result.riskLevel,
+      aiExplanation: result.aiExplanation,
+      osintResults: result.osintResults,
     };
+  }
+
+  @Post('bulk')
+  @ApiOperation({ summary: 'Toplu tarama işlemini arka plan kuyruğuna (BullMQ) ekler' })
+  async bulkScreen(@Body() dto: BulkScreenDto, @GetUser() user: RequestUser) {
+    return this.screeningService.bulkScreen(dto, user.id, user.orgId);
+  }
+
+  @Get('history')
+  @ApiOperation({ summary: 'Kurumun geçmiş tarama sorgularını getirir' })
+  async history(
+    @GetUser() user: RequestUser,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('riskLevel') riskLevel?: RiskLevel,
+    @Query('queryName') queryName?: string,
+  ) {
+    return this.screeningService.getHistory(
+      user.orgId,
+      page ? parseInt(page, 10) : 1,
+      limit ? parseInt(limit, 10) : 20,
+      { riskLevel, queryName },
+    );
+  }
+
+  @Get('download-report/:id')
+  @ApiOperation({ summary: 'Tarama sonucunu PDF olarak indirir' })
+  async downloadReport(@Param('id') id: string, @Res() res: Response) {
+    const buffer = await this.reportsService.generateScreeningReport(id);
+
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename=sanctions-report-${id}.pdf`,
+      'Content-Length': buffer.length.toString(),
+    });
+
+    res.end(buffer);
   }
 }

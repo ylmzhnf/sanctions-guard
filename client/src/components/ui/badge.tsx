@@ -37,7 +37,7 @@ export interface BadgeProps
 }
 
 function Badge({ className, variant, asChild = false, ...props }: BadgeProps) {
-  const Comp = asChild ? Slot : "div"
+  const Comp = (asChild ? Slot : "div") as React.ElementType
 
   return (
     <Comp

@@ -1,182 +1,168 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { Cron } from '@nestjs/schedule';
-import { XMLParser } from 'fast-xml-parser';
-import { PrismaService } from '../prisma/prisma.service';
-import * as csv from 'csv-parser';
-import { Readable } from 'stream';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
+import { SyncStatus } from '@prisma/client';
+import { randomUUID } from 'crypto';
+import { PrismaService } from '../common/prisma/prisma.service';
+import { RedisService } from '../common/redis/redis.service';
+import { SyncProvider } from './interfaces/sync-provider.interface';
+
+
+import { OfacProvider } from './providers/ofac.provider';
+import { EuProvider } from './providers/eu.provider';
+import { UnProvider } from './providers/un.provider';
+import { UkProvider } from './providers/uk.provider';
 
 @Injectable()
-export class SanctionsSyncService {
+export class SanctionsSyncService implements OnModuleInit {
   private readonly logger = new Logger(SanctionsSyncService.name);
+  private providers: SyncProvider[];
+  private readonly LOCK_KEY = 'lock:sanctions_sync';
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly redis: RedisService,
+    private readonly ofacProvider: OfacProvider,
+    private readonly euProvider: EuProvider,
+    private readonly unProvider: UnProvider,
+    private readonly ukProvider: UkProvider,
+  ) {}
 
-  @Cron('0 3 * * *', {
-    name: 'global-sanctions-daily-sync',
-    timeZone: 'UTC',
-  })
-  async syncAllSanctionsData() {
-    this.logger.log('Starting global sanctions data synchronization...');
+  onModuleInit() {
+    this.providers = [
+      this.ofacProvider,
+      this.euProvider,
+      this.unProvider,
+      this.ukProvider,
+    ];
+  }
 
-    const results = await Promise.allSettled([
-      this.syncOfac(),
-      this.syncEu(),
-      this.syncUn(),
-    ]);
+  @Cron(CronExpression.EVERY_DAY_AT_3AM)
+  async handleScheduledSync() {
+    this.logger.log('Scheduled sync triggered...');
+    await this.syncAll();
+  }
 
-    results.forEach((result, index) => {
-      const source = ['OFAC', 'EU', 'UN'][index];
-      if (result.status === 'rejected') {
-        this.logger.error(
-          `Failed to sync ${source} sanctions data: ${result.reason}`,
-        );
-      } else {
-        this.logger.log(`Successfully synced ${source} sanctions data.`);
+  async syncAll(force = false) {
+    const lockValue = randomUUID();
+    const lockTTL = 1800; 
+
+    try {
+      if (force) await this.redis.getClient().del(this.LOCK_KEY);
+
+      const acquired = await this.redis
+        .getClient()
+        .set(this.LOCK_KEY, lockValue, 'EX', lockTTL, 'NX');
+      if (!acquired) {
+        this.logger.warn('Sync already running on another instance. Skipping.');
+        return { success: false, message: 'Sync in progress' };
       }
-    });
 
-    this.logger.log('Global sanctions data synchronization completed.');
+      this.logger.log('Lock acquired. Starting global sync...');
+
+      
+      for (const provider of this.providers) {
+        await this.runProviderSync(provider);
+      }
+
+      return { success: true };
+    } catch (error) {
+      this.logger.error(`Global sync failed: ${error.message}`);
+      return { success: false, error: error.message };
+    } finally {
+      await this.releaseLock(lockValue);
+    }
   }
 
-  private async syncOfac() {
-    this.logger.log('Syncing OFAC sanctions data...');
-    const ofacUrl =
-      'https://sanctionslistservice.ofac.treas.gov/api/PublicationPreview/exports/SDN.CSV';
+  private async runProviderSync(provider: SyncProvider) {
+    const source = provider.sourceName;
+    const startTime = new Date();
+    let stats = { added: 0, updated: 0, removed: 0 };
+    let errorMsg: string | null = null;
 
-    const response = await fetch(ofacUrl, {
-      headers: {
-        'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-        accept: 'text/csv',
-      },
-    });
+    try {
+      const entities = await provider.fetchAndParse();
+      if (!entities.length) return;
 
-    if (!response.ok) {
-      throw new Error(
-        `Failed to fetch OFAC sanctions data: ${response.status}`,
+      
+      const BATCH_SIZE = 300; 
+      for (let i = 0; i < entities.length; i += BATCH_SIZE) {
+        const batch = entities.slice(i, i + BATCH_SIZE);
+
+        await this.prisma.$transaction(
+          batch.map((e) =>
+            this.prisma.sanctionedEntity.upsert({
+              where: { externalId: e.externalId },
+              update: {
+                ...this.mapEntity(e),
+                lastSyncedAt: startTime,
+                isActive: true,
+              },
+              create: {
+                ...this.mapEntity(e),
+                lastSyncedAt: startTime,
+                isActive: true,
+              },
+            }),
+          ),
+        );
+        stats.added += batch.length; 
+      }
+
+      
+      const deactivated = await this.prisma.sanctionedEntity.updateMany({
+        where: {
+          listSource: source,
+          lastSyncedAt: { lt: startTime },
+          isActive: true,
+        },
+        data: { isActive: false },
+      });
+      stats.removed = deactivated.count;
+
+      this.logger.log(
+        `[${source}] Sync complete. Processed: ${stats.added}, Removed: ${stats.removed}`,
       );
+    } catch (err) {
+      errorMsg = err.message;
+      this.logger.error(`[${source}] Provider failed: ${errorMsg}`);
     }
 
-    const buffer = Buffer.from(await response.arrayBuffer());
-    const results: any[] = [];
-
-    await new Promise((resolve, reject) => {
-      Readable.from(buffer)
-        .pipe((csv as any)({ headers: false }))
-        .on('data', (data) => results.push(data))
-        .on('end', resolve)
-        .on('error', reject);
-    });
-
-    for (const item of results) {
-      const ofacId = item['0'];
-      const ofacName = item['1'];
-      const ofacType = item['2'];
-
-      if (!ofacId || !ofacName) continue;
-
-      await this.prisma.sanctionedEntity.upsert({
-        where: { externalId: `OFAC-${ofacId}` },
-        update: { name: ofacName, entityType: ofacType },
-        create: {
-          externalId: `OFAC-${ofacId}`,
-          name: ofacName,
-          listSource: 'OFAC',
-          entityType: ofacType,
-        },
-      });
-    }
+    await this.logSync(source, stats, errorMsg);
   }
 
-  private async syncEu() {
-    this.logger.log('Syncing EU sanctions data...');
-    const euUrl =
-      'https://webgate.ec.europa.eu/fsd/fsf/public/files/csvFullSanctionsList_1_1/content?token=dG9rZW4tMjAxNw';
-
-    const response = await fetch(euUrl, {
-      headers: {
-        'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-      },
-    });
-
-    if (!response.ok)
-      throw new Error(`Failed to fetch EU sanctions data: ${response.status}`);
-
-    const buffer = Buffer.from(await response.arrayBuffer());
-    const results: any[] = [];
-
-    await new Promise((resolve, reject) => {
-      Readable.from(buffer)
-        .pipe((csv as any)({ separator: ';' }))
-        .on('data', (data) => results.push(data))
-        .on('end', resolve)
-        .on('error', reject);
-    });
-
-    for (const item of results) {
-      const euId = item['Entity_LogicalId'] || item['LogicalId'];
-      const euName = item['NameAlias_WholeName'] || item['Name'];
-
-      if (!euId || !euName) continue;
-
-      await this.prisma.sanctionedEntity.upsert({
-        where: { externalId: `EU-${euId}` },
-        update: { name: euName },
-        create: {
-          externalId: `EU-${euId}`,
-          name: euName,
-          listSource: 'EU',
-          entityType: 'Unknown',
-        },
-      });
-    }
+  private mapEntity(e: any) {
+    return {
+      externalId: e.externalId,
+      name: e.name,
+      aliases: e.aliases,
+      entityType: e.entityType,
+      listSource: e.listSource,
+      country: Array.isArray(e.country) ? e.country.join(', ') : e.country,
+      programs: e.programs,
+      reason: e.remarks,
+    };
   }
 
-  private async syncUn() {
-    this.logger.log('Syncing UN sanctions data...');
-    const unUrl =
-      'https://scsanctions.un.org/resources/xml/en/consolidated.xml';
+  private async releaseLock(value: string) {
+    const script = `
+      if redis.call("get",KEYS[1]) == ARGV[1] then
+        return redis.call("del",KEYS[1])
+      else
+        return 0
+      end
+    `;
+    await this.redis.getClient().eval(script, 1, this.LOCK_KEY, value);
+  }
 
-    const response = await fetch(unUrl, {
-      headers: {
-        'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+  private async logSync(source: any, stats: any, error: string | null) {
+    await this.prisma.listSyncLog.create({
+      data: {
+        source,
+        status: error ? SyncStatus.FAILED : SyncStatus.SUCCESS,
+        recordsAdded: stats.added,
+        recordsRemoved: stats.removed,
+        error,
       },
     });
-
-    if (!response.ok)
-      throw new Error(`Failed to fetch UN sanctions data: ${response.status}`);
-
-    const xmlData = await response.text();
-
-    const parser = new XMLParser({ ignoreAttributes: false });
-    const parsedData = parser.parse(xmlData);
-
-    const individuals =
-      parsedData?.CONSOLIDATED_LIST?.INDIVIDUALS?.INDIVIDUAL || [];
-    const entities = parsedData?.CONSOLIDATED_LIST?.ENTITIES?.ENTITY || [];
-
-    const allUnTargets: any[] = [].concat(individuals, entities);
-
-    for (const item of allUnTargets) {
-      const unId = item.DATAID;
-      const unName =
-        `${item.FIRST_NAME || ''} ${item.SECOND_NAME || ''}`.trim();
-      const type = item.TYPE_OF_DOCUMENT ? 'Entity' : 'Individual';
-
-      if (!unId || !unName) continue;
-
-      await this.prisma.sanctionedEntity.upsert({
-        where: { externalId: `UN-${unId}` },
-        update: { name: unName, entityType: type },
-        create: {
-          externalId: `UN-${unId}`,
-          name: unName,
-          listSource: 'UN',
-          entityType: type,
-        },
-      });
-    }
   }
 }

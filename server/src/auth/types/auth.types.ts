@@ -1,4 +1,4 @@
-import { Role } from '@prisma/client';
+import { Role, Plan } from '@prisma/client';
 import { Request } from 'express';
 
 export type JwtPayload = {
@@ -8,12 +8,16 @@ export type JwtPayload = {
   orgId: string;
 };
 
-export interface RequestWithUser extends Request {
-  user: {
-    id: string;
-    email: string;
-    username: string | null;
-    role: Role;
-    orgId: string;
+export interface UserSession {
+  id: string;
+  email: string;
+  role: Role;
+  orgId: string;
+  org?: {
+    plan: Plan;
+    isUnlimited: boolean;
   };
+}
+export interface RequestWithUser extends Request {
+  user: UserSession;
 }

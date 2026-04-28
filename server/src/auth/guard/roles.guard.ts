@@ -1,30 +1,37 @@
-import { Reflector } from '@nestjs/core';
 import {
+  Injectable,
   CanActivate,
   ExecutionContext,
   ForbiddenException,
-  Injectable,
 } from '@nestjs/common';
-import { ROLE_KEY } from '../decorator/roles.decorator';
+import { Reflector } from '@nestjs/core';
 import { Role } from '@prisma/client';
-import { RequestWithUser } from '../types/auth.types';
+import { ROLE_KEY } from '../decorator/roles.decorator';
 
 @Injectable()
 export class RolesGuard implements CanActivate {
   constructor(private reflector: Reflector) {}
+
   canActivate(context: ExecutionContext): boolean {
     const requiredRoles = this.reflector.getAllAndOverride<Role[]>(ROLE_KEY, [
       context.getHandler(),
       context.getClass(),
     ]);
-    if (!requiredRoles) {
+
+    if (!requiredRoles || requiredRoles.length === 0) {
       return true;
     }
-    const { user } = context.switchToHttp().getRequest<RequestWithUser>();
-    const hasRole = requiredRoles.some((role) => (user.role as Role) === role);
+
+    const { user } = context.switchToHttp().getRequest();
+
+    const hasRole = requiredRoles.some((role) => user?.role === role);
+
     if (!hasRole) {
-      throw new ForbiddenException('Access Denied');
+      throw new ForbiddenException(
+        'You do not have permission to access this resource',
+      );
     }
-    return hasRole;
+
+    return true;
   }
 }

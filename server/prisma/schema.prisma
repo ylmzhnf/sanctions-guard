@@ -1,9 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider        = "prisma-client-js"
   previewFeatures = ["postgresqlExtensions"]
@@ -14,75 +8,47 @@ datasource db {
   extensions = [pg_trgm]
 }
 
-enum Role {
-  USER
-  ADMIN
+
+// APP METADATA & SETTINGS (DUAL DEPLOYMENT CONTROL) 
+
+model AppMetadata {
+  id          String   @id @default("singleton")
+  appMode     String   @default("saas")  // "saas" | "enterprise"
+  version     String   @default("1.0.0")
+  installedAt DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
+
+// Global System Settings (Admin-configurable, useful for Self-Hosted)
+model SystemSetting {
+  key       String   @id   // e.g. "smtp_host", "default_query_limit"
+  value     String   @db.Text
+  updatedAt DateTime @updatedAt
+  updatedBy String?
+}
+
+// ENUMS 
 
 enum Plan {
   FREE
   STARTER
   BUSINESS
   ENTERPRISE
+  SELF_HOSTED  
 }
 
-model Organization {
-  id               String    @id @default(cuid())
-  name             String
-  stripeCustomerId String?   @unique
-  plan             Plan      @default(FREE)
-  queriesUsed      Int       @default(0)
-  queriesLimit     Int       @default(10)
-  billingPeriodEnd DateTime?
-  createdAt        DateTime  @default(now())
-
-  users     User[]
-  queries   ScreeningQuery[]
-  auditLogs AuditLog[]
+enum Role {
+  USER         
+  ADMIN        
+  SUPER_ADMIN  
+  API_SERVICE  
 }
 
-model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  password  String
-  username  String?
-  name      String?
-  role      Role     @default(USER)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @default(now()) @updatedAt
-
-  organization Organization? @relation(fields: [orgId], references: [id])
-  orgId        String?
-
-  queries ScreeningQuery[]
-  logs    AuditLog[]
-}
-
-enum ListSource {
-  OFAC
-  EU
-  UN
-  UK_HMT
-  OTHER
-}
-
-model SanctionedEntity {
-  id          String     @id @default(cuid())
-  externalId  String     @unique
-  name        String
-  aliases     String[]
-  entityType  String
-  listSource  ListSource
-  reason      String?    @db.Text
-  country     String?
-  type        String?
-  issueDate   DateTime?
-  moreInfoUrl String?
-  createdAt   DateTime   @default(now())
-
-  matches ScreeningMatch[]
-
-  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin)
+enum LicenseType {
+  SUBSCRIPTION  // SaaS — plan based
+  CREDIT        // SaaS — credit based
+  UNLIMITED     // Enterprise — no limits
+  CUSTOM        // Admin-defined custom limit
 }
 
 enum RiskLevel {
@@ -99,59 +65,254 @@ enum ScreeningStatus {
   FAILED
 }
 
+enum ListSource {
+  OFAC
+  EU
+  UN
+  UK_HMT
+  CUSTOM
+  OTHER
+}
+
+enum RequestSource {
+  WEB_APP      
+  API          
+  BULK_UPLOAD  
+}
+
+enum SyncStatus {
+  SUCCESS
+  PARTIAL
+  FAILED
+}
+
+enum AiProvider {
+  OPENAI
+  ANTHROPIC
+}
+
+// ORGANIZATION & AUTHENTICATION 
+
+model Organization {
+  id                   String   @id @default(cuid())
+  name                 String
+
+  // SaaS Billing & Plans
+  plan                 Plan     @default(FREE)
+  stripeCustomerId     String?  @unique
+  stripeSubscriptionId String?  @unique
+  billingPeriodEnd     DateTime?
+  
+  // Unified Limits (Both modes use these)
+  queriesUsed          Int      @default(0)
+  queriesLimit         Int      @default(10)     
+  isUnlimited          Boolean  @default(false)  
+  
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  // Relations
+  settings             OrganizationSettings?
+  users                User[]
+  queries              ScreeningQuery[]
+  auditLogs            AuditLog[]
+  apiKeys              ApiKey[]  
+  webhooks             Webhook[] 
+  licenses             License[]
+
+  @@index([stripeCustomerId])
+}
+
+model OrganizationSettings {
+  id                 String       @id @default(cuid())
+  orgId              String       @unique
+  organization       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  
+  // Bring Your Own Key (BYOK) - Crucial for Enterprise Compliance
+  aiProvider         AiProvider   @default(OPENAI)
+  aiApiKey           String?      
+  aiThreshold        Int          @default(50) 
+  osintApiKey        String?      
+  activeListSources  ListSource[] 
+}
+
+model User {
+  id                 String   @id @default(cuid())
+  email              String   @unique
+  username           String?
+  name               String?
+  passwordHash       String
+  mustChangePassword Boolean  @default(false)
+  role               Role     @default(USER)
+  isActive           Boolean  @default(true)
+
+  // SSO support
+  ssoProvider        String?
+  ssoSubject         String?
+  
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  orgId              String?
+  organization       Organization? @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  
+  queries            ScreeningQuery[]
+  auditLogs          AuditLog[]
+
+  @@index([email])
+  @@index([orgId])
+}
+
+// B2B INTEGRATIONS & LICENSING
+
+model License {
+  id          String      @id @default(cuid())
+  type        LicenseType @default(SUBSCRIPTION)
+  credits     Int?        // null = unlimited, >0 = credit count
+  expiresAt   DateTime?   // null = no expiry
+  isActive    Boolean     @default(true)
+  notes       String?     // Admin notes
+
+  issuedById  String?
+  issuedAt    DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  orgId       String
+  org         Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, isActive])
+}
+
+model ApiKey {
+  id           String       @id @default(cuid())
+  keyHash      String       @unique  
+  name         String       
+  lastUsedAt   DateTime?
+  isActive     Boolean      @default(true)
+  createdAt    DateTime     @default(now())
+
+  orgId        String
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+}
+
+model Webhook {
+  id           String       @id @default(cuid())
+  url          String       
+  secret       String       
+  events       String[]     
+  isActive     Boolean      @default(true)
+
+  orgId        String
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+}
+
+// SANCTIONS DATA ENGINE 
+
+model SanctionedEntity {
+  id           String     @id @default(cuid())
+  externalId   String     @unique 
+  name         String
+  aliases      String[]
+  entityType   String        
+  listSource   ListSource
+  reason       String?    @db.Text      
+  country      String?
+  programs     String[]     
+  issueDate    DateTime?
+  moreInfoUrl  String?
+  
+  isActive     Boolean    @default(true)
+  lastSyncedAt DateTime   @default(now())
+  createdAt    DateTime   @default(now())
+
+  matches      ScreeningMatch[]
+
+  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin)
+  @@index([listSource, isActive])
+  @@index([isActive])
+}
+
+model ListSyncLog {
+  id             String     @id @default(cuid())
+  source         ListSource
+  status         SyncStatus
+  recordsAdded   Int        @default(0)
+  recordsUpdated Int        @default(0)
+  recordsRemoved Int        @default(0)
+  error          String?    @db.Text
+  syncedAt       DateTime   @default(now())
+}
+
+// ─── SCREENING RESULTS & AUDIT 
+
 model ScreeningQuery {
-  id           String          @id @default(cuid())
-  searchedName String
-  fuzzyMatch   Boolean         @default(true)
-  exactMatch   Boolean         @default(false)
-  status       ScreeningStatus @default(PENDING)
-  matchedCount Int             @default(0)
-  riskLevel    RiskLevel?
-  reportUrl    String?
-  createdAt    DateTime        @default(now())
+  id            String          @id @default(cuid())
+  queryName     String          
+  status        ScreeningStatus @default(PENDING)
+  riskLevel     RiskLevel?
+  matchCount    Int             @default(0)
+  
+  fuzzyMatch    Boolean         @default(true)
+  exactMatch    Boolean         @default(false)
+  
+  aiExplanation String?         @db.Text
+  osintResults  Json?           
+  reportUrl     String?         
+  source        RequestSource   @default(WEB_APP) 
+  
+  createdAt     DateTime        @default(now())
 
-  user   User   @relation(fields: [userId], references: [id])
-  userId String
+  userId        String?         
+  user          User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+  
+  orgId         String
+  org           Organization    @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
-  org   Organization @relation(fields: [orgId], references: [id])
-  orgId String
-
-  matches  ScreeningMatch[]
-  auditLog AuditLog?
+  matches       ScreeningMatch[]
+  auditLog      AuditLog?
 
   @@index([orgId, createdAt])
+  @@index([userId, createdAt])
 }
 
 model ScreeningMatch {
-  id              String     @id @default(cuid())
+  id              String           @id @default(cuid())
   matchedEntityId String
   matchedName     String
-  similarityScore Float
-  matchedField    String
+  similarityScore Float            
+  matchedField    String           
   listSource      ListSource
 
-  query   ScreeningQuery @relation(fields: [queryId], references: [id])
-  queryId String
+  entity          SanctionedEntity @relation(fields: [matchedEntityId], references: [id])
+  queryId         String
+  query           ScreeningQuery   @relation(fields: [queryId], references: [id], onDelete: Cascade)
 
-  entity SanctionedEntity @relation(fields: [matchedEntityId], references: [id])
+  @@index([queryId])
+  @@index([matchedEntityId])
 }
 
 model AuditLog {
-  id            String   @id @default(cuid())
-  action        String
-  metadata      Json
-  integrityHash String
-  createdAt     DateTime @default(now())
+  id            String          @id @default(cuid())
+  action        String          
+  actorId       String          
+  metadata      Json            
+  integrityHash String          
+  
+  createdAt     DateTime        @default(now())
 
-  // Relations
-  org   Organization @relation(fields: [orgId], references: [id])
-  orgId String
+  orgId         String
+  org           Organization    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  
+  userId        String?         
+  user          User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
 
-  user   User   @relation(fields: [userId], references: [id])
-  userId String
-
-  query   ScreeningQuery? @relation(fields: [queryId], references: [id])
-  queryId String?         @unique
+  queryId       String?         @unique
+  query         ScreeningQuery? @relation(fields: [queryId], references: [id], onDelete: SetNull)
 
   @@index([orgId, createdAt])
+  @@index([actorId])
 }
