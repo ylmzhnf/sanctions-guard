@@ -1,131 +1,326 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { auth } from "@/lib/api";
+import Cookies from "js-cookie";
+import { auth, notifications } from "@/lib/api";
 import { useAuthStore } from "@/lib/store";
-import { useFeatureFlags } from "@/hooks/useFeatureFlags";
-import { cn } from "@/lib/utils";
-import { 
-  Search, ShieldAlert, History, LayoutDashboard, Settings, LogOut, 
-  User, CreditCard, Users, Menu, X, ShieldCheck, 
-  ChevronRight, Bell, Zap, Database, Activity, Sparkles
+import { cn, formatDate } from "@/lib/utils";
+import { isAdmin, isSuperAdmin } from "@/lib/auth-utils";
+import {
+  Search,
+  ShieldAlert,
+  History,
+  LayoutDashboard,
+  Settings,
+  LogOut,
+  User,
+  Users,
+  Menu,
+  X,
+  ShieldCheck,
+  ChevronRight,
+  Bell,
+  Database,
+  Sparkles,
 } from "lucide-react";
 
-export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+export default function DashboardLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   const pathname = usePathname();
   const router = useRouter();
-  const { logout, user: storeUser, token, setAuth } = useAuthStore();
-  const { isSaas, allFeaturesUnlocked } = useFeatureFlags();
-  
+  const {
+    logout,
+    user: storeUser,
+    token: storeToken,
+    isHydrated,
+  } = useAuthStore();
+
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
   const [scrolled, setScrolled] = useState(false);
-
-  useEffect(() => { setIsMounted(true); }, []);
-
-  // Sync data dynamically for real-time quota + plan updates
-  const { data: user } = useQuery({
-    queryKey: ["current-user"],
-    queryFn: auth.me,
-    staleTime: 0,           // Always consider data stale so invalidation fetches immediately
-    refetchOnWindowFocus: true,
-    refetchOnMount: true,
-    refetchInterval: 5000,  // Her 5 saniyede bir güncelle
-  });
+  const [showNotifications, setShowNotifications] = useState(false);
 
   useEffect(() => {
-    if (user && token && JSON.stringify(user) !== JSON.stringify(storeUser)) {
-      setAuth(user, token);
-    }
-  }, [user, token, storeUser, setAuth]);
+    setIsMounted(true);
+  }, []);
 
-  // Handle header glassmorphism on scroll
+  useEffect(() => {
+    if (storeToken) {
+      Cookies.set("access_token", storeToken, {
+        expires: 7,
+        sameSite: "lax",
+        path: "/",
+      });
+    }
+  }, [storeToken]);
+
+  const {
+    data: user,
+    isLoading: isUserLoading,
+    isError: isUserError,
+    isFetched: isUserFetched,
+  } = useQuery({
+    queryKey: ["current-user"],
+    queryFn: auth.me,
+    staleTime: 1000 * 60,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+    enabled: isHydrated && !!storeToken,
+  });
+
+  const currentUser = user || storeUser;
+
+  const { data: notificationsList = [], refetch: refetchNotifications } =
+    useQuery({
+      queryKey: ["notifications"],
+      queryFn: notifications.getAll,
+      refetchInterval: 30000,
+      refetchOnWindowFocus: false,
+      enabled: !!storeToken,
+    });
+
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 20);
     window.addEventListener("scroll", handleScroll);
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
-  // Güvenlik ve Yönlendirme Kontrolü
   useEffect(() => {
-    if (isMounted) {
-      if (!token || !user) {
-        router.replace("/auth/login");
-      } else if (user.mustChangePassword && pathname !== "/auth/change-password") {
-        router.replace("/auth/change-password");
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Element;
+      if (
+        showNotifications &&
+        !target.closest("[data-notification-dropdown]")
+      ) {
+        setShowNotifications(false);
       }
+    };
+
+    if (showNotifications) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () =>
+        document.removeEventListener("mousedown", handleClickOutside);
     }
-  }, [token, user, router, isMounted, pathname]);
+  }, [showNotifications]);
 
-  const usagePct = useMemo(() => {
-    if (allFeaturesUnlocked || !user?.org) return 0;
-    const { queriesUsed, queriesLimit } = user.org;
-    if (queriesLimit === -1) return 0;
-    return Math.min(100, (queriesUsed / (queriesLimit || 1)) * 100);
-  }, [user, allFeaturesUnlocked]);
+  useEffect(() => {
+    if (!isMounted || !isHydrated) return;
 
-  if (!isMounted || !user || !token) {
+    if (!storeToken) {
+      router.replace("/auth/login");
+      return;
+    }
+
+    const shouldRedirectToLogin =
+      storeToken &&
+      !currentUser &&
+      !isUserLoading &&
+      (isUserError || isUserFetched);
+
+    if (shouldRedirectToLogin) {
+      router.replace("/auth/login");
+    }
+  }, [
+    storeToken,
+    currentUser,
+    router,
+    isMounted,
+    isHydrated,
+    isUserLoading,
+    isUserError,
+    isUserFetched,
+  ]);
+
+  const unreadNotifications = notificationsList.filter((n: any) => !n.isRead);
+
+  const handleMarkAllAsRead = async () => {
+    try {
+      await notifications.markAllAsRead();
+      refetchNotifications();
+      setShowNotifications(false);
+    } catch (error) {
+      console.error("Failed to mark notifications as read:", error);
+    }
+  };
+
+  const handleMarkAsRead = async (notificationId: string) => {
+    try {
+      await notifications.markAsRead(notificationId);
+      refetchNotifications();
+    } catch (error) {
+      console.error("Failed to mark notification as read:", error);
+    }
+  };
+
+  if (!isMounted || !isHydrated) {
     return (
       <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-4">
         <div className="relative">
           <div className="absolute inset-0 blur-xl bg-primary/20 rounded-full animate-pulse" />
           <div className="w-12 h-12 border-4 border-primary/20 border-t-primary rounded-full animate-spin relative z-10" />
         </div>
-        <p className="text-[10px] uppercase tracking-[0.3em] font-black text-muted-foreground animate-pulse">Initializing Protocol...</p>
+        <p className="text-[10px] uppercase tracking-[0.3em] font-black text-muted-foreground animate-pulse">
+          Initializing Protocol...
+        </p>
       </div>
     );
   }
 
-  const isAdmin = user.role === "ADMIN" || user.role === "SUPER_ADMIN";
+  if (!isHydrated || !storeToken) {
+    return (
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-4">
+        <div className="relative">
+          <div className="absolute inset-0 blur-xl bg-primary/20 rounded-full animate-pulse" />
+          <div className="w-12 h-12 border-4 border-primary/20 border-t-primary rounded-full animate-spin relative z-10" />
+        </div>
+        <p className="text-[10px] uppercase tracking-[0.3em] font-black text-muted-foreground animate-pulse">
+          Authenticating...
+        </p>
+      </div>
+    );
+  }
+
+  if (storeToken && !currentUser) {
+    return (
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-4">
+        <div className="relative">
+          <div className="absolute inset-0 blur-xl bg-primary/20 rounded-full animate-pulse" />
+          <div className="w-12 h-12 border-4 border-primary/20 border-t-primary rounded-full animate-spin relative z-10" />
+        </div>
+        <p className="text-[10px] uppercase tracking-[0.3em] font-black text-muted-foreground animate-pulse">
+          Loading user profile...
+        </p>
+      </div>
+    );
+  }
+
+  const userIsAdmin = isAdmin(currentUser);
+  const userIsSuperAdmin = isSuperAdmin(currentUser);
 
   const menuGroups = [
     {
       label: "Intelligence",
       items: [
-        { id: "panel", icon: LayoutDashboard, label: "Overview", href: "/dashboard" },
-        { id: "search", icon: Search, label: "Screening Tool", href: "/dashboard/search" },
-        { id: "history", icon: History, label: "Audit History", href: "/dashboard/history" },
-        { id: "audit", icon: ShieldAlert, label: "System Logs", href: "/dashboard/logs" },
-      ]
+        {
+          id: "panel",
+          icon: LayoutDashboard,
+          label: "Overview",
+          href: "/dashboard",
+        },
+        {
+          id: "search",
+          icon: Search,
+          label: "Screening Tool",
+          href: "/dashboard/search",
+        },
+        {
+          id: "history",
+          icon: History,
+          label: "Audit History",
+          href: "/dashboard/history",
+        },
+        ...(userIsAdmin
+          ? [
+              {
+                id: "audit",
+                icon: ShieldAlert,
+                label: "System Logs",
+                href: "/dashboard/logs",
+              },
+            ]
+          : []),
+      ],
     },
     {
       label: "Management",
       items: [
-        ...(isSaas ? [{ id: "billing", icon: CreditCard, label: "Billing & Plans", href: "/dashboard/billing" }] : []),
-        { id: "settings", icon: Settings, label: "System Config", href: "/dashboard/settings" },
-      ]
+        ...(userIsAdmin
+          ? [
+              {
+                id: "settings",
+                icon: Settings,
+                label: "System Config",
+                href: "/dashboard/settings",
+              },
+            ]
+          : []),
+      ],
     },
-    ...(isAdmin ? [{
-      label: "Administration",
-      items: [
-        { id: "overseer", icon: Sparkles, label: "System Overseer", href: "/dashboard/admin" },
-        { id: "sync", icon: Database, label: "Database Sync", href: "/dashboard/admin/sync" },
-        { id: "users", icon: Users, label: "Global Team", href: "/dashboard/admin/users" },
-      ]
-    }] : [])
-  ];
+    ...(userIsAdmin
+      ? [
+          {
+            label: "Administration",
+            items: [
+              ...(userIsSuperAdmin
+                ? [
+                    {
+                      id: "overseer",
+                      icon: Sparkles,
+                      label: "System Overseer",
+                      href: "/dashboard/admin",
+                    },
+                  ]
+                : []),
+              {
+                id: "sync",
+                icon: Database,
+                label: "Database Sync",
+                href: "/dashboard/admin/sync",
+              },
+              ...(userIsSuperAdmin
+                ? [
+                    {
+                      id: "users",
+                      icon: Users,
+                      label: "Global Team",
+                      href: "/dashboard/admin/users",
+                    },
+                  ]
+                : []),
+              ...(userIsAdmin && !userIsSuperAdmin
+                ? [
+                    {
+                      id: "team",
+                      icon: Users,
+                      label: "Team Management",
+                      href: "/dashboard/admin/users",
+                    },
+                  ]
+                : []),
+            ],
+          },
+        ]
+      : []),
+  ].filter((group) => group.items.length > 0);
 
   const getPageTitle = () => {
-    if (pathname === "/dashboard") return "Mission Control";
-    const segment = pathname.split('/').pop() || "";
-    return segment.charAt(0).toUpperCase() + segment.slice(1).replace(/-/g, ' ');
+    if (pathname === "/dashboard") return "Overview";
+    const segment = pathname.split("/").pop() || "";
+    return (
+      segment.charAt(0).toUpperCase() + segment.slice(1).replace(/-/g, " ")
+    );
   };
 
+  const orgName =
+    currentUser?.organization?.name || currentUser?.org?.name || "Organization";
+
   return (
-    <div className="min-h-screen bg-background flex overflow-hidden font-sans selection:bg-primary/20 selection:text-primary">
-      
+    <div className="h-dvh bg-background flex overflow-hidden font-sans selection:bg-primary/20 selection:text-primary">
       {/* Mobile Backdrop */}
       {isMobileMenuOpen && (
-        <div 
+        <div
           className="fixed inset-0 bg-background/90 backdrop-blur-md z-40 lg:hidden animate-in fade-in"
           onClick={() => setIsMobileMenuOpen(false)}
         />
       )}
 
-      {/* Mobile Hamburger Button (sol) */}
+      {/* Mobile Hamburger Button */}
       {!isMobileMenuOpen && (
         <button
           onClick={() => setIsMobileMenuOpen(true)}
@@ -135,7 +330,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </button>
       )}
 
-      {/* Mobile Close Button (sağ üst) */}
+      {/* Mobile Close Button */}
       {isMobileMenuOpen && (
         <button
           onClick={() => setIsMobileMenuOpen(false)}
@@ -145,56 +340,64 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </button>
       )}
 
-      {/* ── 1. SIDEBAR (Sol Navigasyon) ────────────────────────────────── */}
-      <aside className={cn(
-        "fixed inset-y-0 left-0 z-50 w-[280px] bg-card/50 backdrop-blur-2xl border-r border-white/5 dark:border-white/10 transform transition-all duration-500 cubic-bezier(0.4, 0, 0.2, 1) lg:translate-x-0 lg:static flex flex-col shrink-0 shadow-2xl lg:shadow-none h-screen",
-        isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"
-      )}>
-        
-        {/* Brand Area */}
-        <div className="h-24 flex items-center px-8 border-b border-white/5 shrink-0 relative overflow-hidden group">
-          <div className="absolute inset-0 bg-gradient-to-r from-primary/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700" />
-          <Link href="/dashboard" className="flex items-center gap-4 relative z-10 w-full" onClick={() => setIsMobileMenuOpen(false)}>
-            <div className="bg-primary p-2.5 rounded-2xl shadow-[0_0_20px_rgba(var(--primary),0.3)] group-hover:scale-110 group-hover:rotate-12 transition-all duration-500">
-              <ShieldCheck className="w-6 h-6 text-primary-foreground" />
+      {/* SIDEBAR */}
+      <aside
+        className={cn(
+          "fixed inset-y-0 left-0 z-50 w-[260px] bg-card border-r border-border transform transition-transform duration-300 ease-out lg:translate-x-0 lg:static lg:h-full flex flex-col shrink-0",
+          isMobileMenuOpen ? "translate-x-0" : "-translate-x-full",
+        )}
+      >
+        <div className="h-16 flex items-center px-5 border-b border-border shrink-0">
+          <Link
+            href="/dashboard"
+            className="flex items-center gap-3 w-full"
+            onClick={() => setIsMobileMenuOpen(false)}
+          >
+            <div className="bg-primary p-2 rounded-md">
+              <ShieldCheck className="w-5 h-5 text-primary-foreground" />
             </div>
-            <div className="flex flex-col">
-              <span className="font-black text-xl text-foreground tracking-tighter">
-                Sanctions<span className="text-primary bg-clip-text text-transparent bg-gradient-to-r from-primary to-blue-500">Guard</span>
+            <div className="flex flex-col min-w-0">
+              <span className="font-semibold text-base text-foreground tracking-tight">
+                Sanctions<span className="text-primary">Guard</span>
               </span>
-              <span className="text-[9px] font-black text-muted-foreground uppercase tracking-[0.25em] leading-none mt-1">Compliance Engine</span>
+              <span className="text-[11px] font-medium text-muted-foreground leading-none mt-0.5">
+                Compliance console
+              </span>
             </div>
           </Link>
         </div>
-        
-        {/* Navigation Items */}
-        <nav className="flex-1 overflow-y-auto py-8 px-5 space-y-10 custom-scrollbar">
+
+        <nav className="flex-1 overflow-y-auto py-5 px-3 space-y-6 custom-scrollbar">
           {menuGroups.map((group) => (
-            <div key={group.label} className="space-y-3">
-              <p className="px-3 text-[10px] font-black uppercase tracking-[0.3em] text-muted-foreground/40 flex items-center gap-2">
+            <div key={group.label} className="space-y-1">
+              <p className="px-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground mb-2">
                 {group.label}
               </p>
-              <div className="space-y-1.5">
+              <div className="space-y-0.5">
                 {group.items.map((item) => {
-                  const isActive = pathname === item.href || (item.href !== "/dashboard" && pathname.startsWith(item.href));
+                  const isActive =
+                    pathname === item.href ||
+                    (item.href !== "/dashboard" &&
+                      pathname.startsWith(item.href));
                   return (
-                    <Link key={item.id} href={item.href} onClick={() => setIsMobileMenuOpen(false)} className={cn(
-                      "flex items-center justify-between px-4 py-3 rounded-2xl text-sm transition-all duration-300 group relative overflow-hidden",
-                      isActive 
-                        ? "text-primary-foreground font-black shadow-lg" 
-                        : "text-muted-foreground hover:bg-muted/80 hover:text-foreground font-bold"
-                    )}>
-                      {isActive && (
-                        <div className="absolute inset-0 bg-gradient-to-r from-primary to-primary/80" />
+                    <Link
+                      key={item.id}
+                      href={item.href}
+                      onClick={() => setIsMobileMenuOpen(false)}
+                      className={cn(
+                        "flex items-center justify-between px-3 py-2.5 rounded-md text-sm transition-colors",
+                        isActive
+                          ? "bg-primary text-primary-foreground font-semibold"
+                          : "text-muted-foreground hover:bg-slate-100 hover:text-foreground font-medium",
                       )}
-                      {isActive && (
-                        <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 blur-3xl -mr-16 -mt-16 rounded-full" />
-                      )}
-                      <div className="flex items-center gap-3 relative z-10">
-                        <item.icon className={cn("w-4 h-4 transition-transform duration-300", isActive ? "text-primary-foreground" : "group-hover:scale-110", isActive && "animate-pulse")} />
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <item.icon className="w-4 h-4 shrink-0" />
                         <span>{item.label}</span>
                       </div>
-                      {isActive && <ChevronRight className="w-3 h-3 relative z-10 opacity-70" />}
+                      {isActive && (
+                        <ChevronRight className="w-3.5 h-3.5 opacity-70" />
+                      )}
                     </Link>
                   );
                 })}
@@ -203,105 +406,192 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           ))}
         </nav>
 
-        {/* Quota & License Section (Hibrit) */}
-        <div className="p-5 border-t border-white/5 bg-gradient-to-b from-transparent to-muted/20 shrink-0">
-          {allFeaturesUnlocked ? (
-            <div className="relative overflow-hidden bg-gradient-to-br from-emerald-500/10 to-teal-500/10 border border-emerald-500/20 p-5 rounded-3xl flex items-center gap-4 group">
-              <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/10 blur-2xl rounded-full group-hover:scale-150 transition-transform duration-1000" />
-              <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 flex items-center justify-center shrink-0 shadow-[0_0_15px_rgba(16,185,129,0.2)]">
-                <Sparkles className="w-5 h-5 text-emerald-500" />
-              </div>
-              <div className="flex flex-col relative z-10">
-                <span className="text-[10px] font-black uppercase text-emerald-600 tracking-[0.2em] mb-0.5">Enterprise Core</span>
-                <span className="text-[11px] font-bold text-emerald-600/70">Unrestricted Access</span>
-              </div>
+        <div className="p-3 border-t border-border shrink-0">
+          <div className="bg-emerald-50 border border-emerald-200 p-3 rounded-md flex items-center gap-3">
+            <div className="w-8 h-8 rounded-md bg-emerald-100 flex items-center justify-center shrink-0">
+              <ShieldCheck className="w-4 h-4 text-emerald-700" />
             </div>
-          ) : (
-            <div className="bg-card/50 backdrop-blur-sm border border-border/50 p-5 rounded-3xl space-y-4 hover:border-border transition-colors">
-              <div className="flex justify-between items-end">
-                <span className="text-[10px] font-black uppercase text-muted-foreground tracking-[0.2em]">Monthly Quota</span>
-                <span className="text-xs font-black">{user.org?.queriesUsed} / {user.org?.queriesLimit === -1 ? "∞" : user.org?.queriesLimit}</span>
-              </div>
-              <div className="h-2 bg-muted/50 rounded-full overflow-hidden shadow-inner">
-                <div 
-                  className={cn("h-full transition-all duration-1000 relative", usagePct > 80 ? "bg-destructive" : "bg-primary")} 
-                  style={{ width: `${usagePct}%` }} 
-                >
-                  <div className="absolute inset-0 bg-white/20 w-full animate-[shimmer_2s_infinite]" />
-                </div>
-              </div>
-              {isSaas && (
-                <Link href="/dashboard/billing" className="flex items-center justify-center gap-2 py-3 mt-2 bg-primary/10 text-primary text-[10px] font-black rounded-xl hover:bg-primary/20 hover:scale-[1.02] active:scale-95 transition-all uppercase tracking-[0.2em] group">
-                  <Zap className="w-3 h-3 group-hover:fill-current transition-all" /> Upgrade Capacity
-                </Link>
-              )}
+            <div className="flex flex-col min-w-0">
+              <span className="text-xs font-semibold text-emerald-800">
+                System online
+              </span>
+              <span className="text-[11px] text-emerald-700/80">
+                Screening available
+              </span>
             </div>
-          )}
+          </div>
         </div>
 
-        {/* Sign Out Action */}
-        <div className="px-5 py-4 shrink-0">
-          <button 
-            onClick={() => { logout(); router.push("/auth/login"); }} 
-            className="w-full flex items-center justify-between px-5 py-3.5 text-sm font-black text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-2xl transition-all duration-300 group"
+        <div className="px-3 pb-4 shrink-0">
+          <button
+            onClick={() => {
+              logout();
+              router.push("/auth/login");
+            }}
+            className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm font-medium text-muted-foreground hover:text-destructive hover:bg-red-50 rounded-md transition-colors"
           >
-            <div className="flex items-center gap-3">
-              <LogOut className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
-              <span className="uppercase tracking-widest text-[11px]">Secure Logout</span>
-            </div>
+            <LogOut className="w-4 h-4" />
+            <span>Sign out</span>
           </button>
         </div>
       </aside>
 
-      {/* ── 2. MAIN AREA (İçerik) ──────────────────────────────────────── */}
-      <main className="flex-1 flex flex-col min-w-0 overflow-hidden relative bg-gradient-to-br from-background to-muted/20">
-        
-        {/* Dynamic Header */}
-        <header className={cn(
-          "h-24 shrink-0 flex items-center justify-between px-6 lg:px-12 z-20 transition-all duration-500 sticky top-0",
-          scrolled ? "bg-background/80 backdrop-blur-2xl border-b border-border shadow-sm" : "bg-transparent"
-        )}>
-           <div className="flex items-center gap-4">
-             <div className="flex flex-col">
-               <h2 className="text-2xl font-black text-foreground tracking-tighter leading-none bg-clip-text text-transparent bg-gradient-to-r from-foreground to-foreground/70">
-                 {getPageTitle()}
-               </h2>
-               <div className="flex items-center gap-2 mt-2">
-                  <div className="relative flex h-2 w-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                  </div>
-                  <span className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.3em]">Network Secured</span>
-               </div>
-             </div>
-           </div>
+      <main className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden relative bg-background">
+        <header
+          className={cn(
+            "sticky top-0 h-16 shrink-0 flex items-center justify-between px-4 sm:px-6 lg:px-8 z-30 border-b border-border bg-background/95 backdrop-blur-md",
+            scrolled && "shadow-sm",
+          )}
+        >
+          <div className="flex flex-col min-w-0 pl-10 lg:pl-0">
+            <h2 className="text-lg font-semibold tracking-tight truncate bg-gradient-to-r from-slate-900 via-slate-700 to-blue-700 bg-clip-text text-transparent">
+              {getPageTitle()}
+            </h2>
+            <span className="text-xs text-muted-foreground">
+              Secure session
+            </span>
+          </div>
 
-           <div className="flex items-center gap-6">
-              <button className="p-3 text-muted-foreground hover:bg-muted hover:text-foreground rounded-2xl transition-all relative group">
-                <Bell className="w-5 h-5 group-hover:rotate-12 transition-transform" />
-                <span className="absolute top-2.5 right-2.5 w-2.5 h-2.5 bg-destructive rounded-full border-2 border-background animate-pulse" />
+          <div className="flex items-center gap-6">
+            <div className="relative" data-notification-dropdown>
+              <button
+                onClick={() => setShowNotifications(!showNotifications)}
+                className="p-2 text-muted-foreground hover:bg-slate-100 hover:text-foreground rounded-md transition-colors relative"
+                aria-label="Notifications"
+              >
+                <Bell className="w-5 h-5" />
+                {unreadNotifications.length > 0 && (
+                  <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-destructive rounded-full border-2 border-background" />
+                )}
               </button>
-              
-              <div className="h-10 w-px bg-border/50 hidden sm:block" />
-              
-              <div className="hidden sm:flex items-center gap-4 bg-card/50 backdrop-blur-md border border-border/50 px-5 py-2.5 rounded-3xl shadow-sm hover:shadow-md transition-shadow cursor-pointer">
-                <div className="flex flex-col items-end">
-                   <span className="text-xs font-black text-foreground tracking-tight">{user.name?.split(" ")[0] || "User"}</span>
-                   <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest mt-0.5">{user.org?.name}</span>
+
+              {showNotifications && (
+                <div className="absolute top-full right-0 mt-2 w-80 max-w-[calc(100vw-2rem)] bg-card border border-border rounded-lg shadow-lg z-50">
+                  <div className="p-4 border-b border-border">
+                    <div className="flex items-center justify-between gap-2">
+                      <h3 className="font-semibold text-foreground text-sm">
+                        Notifications
+                      </h3>
+                      {unreadNotifications.length > 0 && (
+                        <span className="text-[11px] font-medium text-primary bg-primary/10 px-2 py-0.5 rounded">
+                          {unreadNotifications.length} new
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="max-h-96 overflow-y-auto">
+                    {notificationsList.length === 0 ? (
+                      <div className="p-8 text-center">
+                        <div className="w-16 h-16 bg-muted/50 rounded-full flex items-center justify-center mx-auto mb-4">
+                          <Bell className="w-6 h-6 text-muted-foreground" />
+                        </div>
+                        <p className="text-sm font-bold text-muted-foreground">
+                          No new notifications
+                        </p>
+                        <p className="text-xs text-muted-foreground/70 mt-1">
+                          You're all caught up!
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="p-2">
+                        {notificationsList.map(
+                          (notification: any, index: number) => (
+                            <div
+                              key={notification.id || index}
+                              className="p-4 hover:bg-muted/50 rounded-2xl transition-colors border-b border-border/30 last:border-0 cursor-pointer"
+                              onClick={() =>
+                                !notification.isRead &&
+                                handleMarkAsRead(notification.id)
+                              }
+                            >
+                              <div className="flex items-start gap-3">
+                                <div
+                                  className={cn(
+                                    "w-2 h-2 rounded-full mt-2 shrink-0",
+                                    notification.type === "error"
+                                      ? "bg-destructive"
+                                      : notification.type === "warning"
+                                        ? "bg-amber-500"
+                                        : notification.type === "success"
+                                          ? "bg-emerald-500"
+                                          : "bg-primary",
+                                    notification.isRead && "opacity-50",
+                                  )}
+                                />
+                                <div className="flex-1 min-w-0">
+                                  <p
+                                    className={cn(
+                                      "text-sm font-bold leading-tight",
+                                      notification.isRead
+                                        ? "text-muted-foreground"
+                                        : "text-foreground",
+                                    )}
+                                  >
+                                    {notification.title ||
+                                      "System Notification"}
+                                  </p>
+                                  <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                                    {notification.message ||
+                                      "No message available"}
+                                  </p>
+                                  <p className="text-[10px] text-muted-foreground/60 mt-2 uppercase tracking-widest font-black">
+                                    {notification.createdAt
+                                      ? formatDate(notification.createdAt)
+                                      : "Just now"}
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          ),
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {unreadNotifications.length > 0 && (
+                    <div className="p-4 border-t border-border/50">
+                      <button
+                        onClick={handleMarkAllAsRead}
+                        className="w-full text-center text-[10px] font-black uppercase tracking-[0.2em] text-primary hover:text-primary/70 transition-colors py-2"
+                      >
+                        Mark All as Read
+                      </button>
+                    </div>
+                  )}
                 </div>
-                <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-primary/20 to-primary/5 border border-primary/20 flex items-center justify-center text-primary shadow-inner">
-                  <User className="w-5 h-5" />
+              )}
+            </div>
+
+            <div className="h-6 w-px bg-border hidden sm:block" />
+
+            <div className="hidden sm:flex items-center gap-3 border border-border px-3 py-1.5 rounded-md">
+              <div className="flex flex-col items-end min-w-0">
+                <span className="text-xs font-semibold text-foreground truncate">
+                  {currentUser?.name?.split(" ")[0] || "User"}
+                </span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[11px] text-muted-foreground truncate max-w-[120px]">
+                    {orgName}
+                  </span>
+                  <span className="text-[10px] font-medium text-primary px-1.5 py-0.5 bg-primary/10 rounded">
+                    {currentUser?.role === "SUPER_ADMIN"
+                      ? "SUPER"
+                      : currentUser?.role === "ADMIN"
+                        ? "ADMIN"
+                        : "USER"}
+                  </span>
                 </div>
               </div>
-           </div>
+              <div className="w-8 h-8 rounded-md bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-600">
+                <User className="w-4 h-4" />
+              </div>
+            </div>
+          </div>
         </header>
 
-        {/* Page Content */}
-        <div className="flex-1 overflow-y-auto px-6 py-8 md:px-12 md:py-10 custom-scrollbar relative">
-          {/* Background decorative elements */}
-          <div className="fixed top-20 left-1/2 -translate-x-1/2 w-[800px] h-[500px] bg-primary/5 blur-[120px] rounded-full pointer-events-none" />
-          
-          <div className="max-w-[1400px] mx-auto animate-in fade-in slide-in-from-bottom-8 duration-700 relative z-10">
+        <div className="flex-1 min-h-0 overflow-y-auto px-4 py-6 sm:px-6 lg:px-8 custom-scrollbar">
+          <div className="max-w-[1400px] mx-auto">
             {children}
           </div>
         </div>

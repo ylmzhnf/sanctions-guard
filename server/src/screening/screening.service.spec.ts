@@ -105,24 +105,10 @@ describe('ScreeningService', () => {
     beforeEach(() => {
       mockPrisma.organization.findUniqueOrThrow.mockResolvedValue({
         id: 'org-1',
-        plan: 'BUSINESS',
-        queriesUsed: 0,
-        isUnlimited: false,
-        settings: { aiApiKey: 'dummy-key', enableOsint: true },
+        name: 'Test Org',
+        settings: { aiProvider: 'OPENAI', aiApiKey: 'dummy-key' },
       });
       mockRedis.get.mockResolvedValue(null);
-    });
-
-    it('should throw ForbiddenException if plan limit is reached', async () => {
-      mockPrisma.organization.findUniqueOrThrow.mockResolvedValue({
-        plan: 'FREE',
-        queriesUsed: 10,
-        isUnlimited: false,
-      });
-
-      await expect(
-        service.screen({ queryName: 'Test' }, 'user-1', 'org-1'),
-      ).rejects.toThrow(ForbiddenException);
     });
 
     it('should return cached result immediately and skip DB/AI if found in Redis', async () => {
@@ -211,17 +197,6 @@ describe('ScreeningService', () => {
       expect(mockQueue.addBulk.mock.calls[0][0]).toHaveLength(2);
       expect(result.totalQueued).toBe(2);
       expect(result.message).toContain('kuyruğa alındı');
-    });
-
-    it('should throw ForbiddenException for FREE/STARTER plans', async () => {
-      mockPrisma.organization.findUniqueOrThrow.mockResolvedValue({
-        plan: 'STARTER',
-        isUnlimited: false,
-      });
-
-      await expect(
-        service.bulkScreen({ names: ['Test'] }, 'u-1', 'o-1'),
-      ).rejects.toThrow(ForbiddenException);
     });
   });
 });

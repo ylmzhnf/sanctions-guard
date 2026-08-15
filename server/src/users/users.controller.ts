@@ -46,7 +46,7 @@ export class UsersController {
 
   @Get('org-members')
   @UseGuards(RolesGuard)
-  @Roles(Role.ADMIN)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({ summary: 'Organizasyon üyelerini listele (Sadece Admin)' })
   async getOrgUsers(@GetUser('orgId') orgId: string) {
     return this.userService.getAllUsersInOrg(orgId);
@@ -54,7 +54,7 @@ export class UsersController {
 
   @Post('org-members')
   @UseGuards(RolesGuard)
-  @Roles(Role.ADMIN)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({ summary: 'Organizasyona yeni üye ekle (Sadece Admin)' })
   @ApiResponse({ status: 201, description: 'Üye başarıyla eklendi.' })
   async addUserToOrg(
@@ -66,7 +66,7 @@ export class UsersController {
 
   @Patch(':id/role')
   @UseGuards(RolesGuard)
-  @Roles(Role.ADMIN)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({ summary: 'Kullanıcı rolünü güncelle (Sadece Admin)' })
   async updateUserRole(
     @GetUser('orgId') adminOrgId: string,

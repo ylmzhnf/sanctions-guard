@@ -1,4 +1,4 @@
-import { Role, Plan } from '@prisma/client';
+import { Role } from '@prisma/client';
 import { Request } from 'express';
 
 export type JwtPayload = {
@@ -13,11 +13,12 @@ export interface UserSession {
   email: string;
   role: Role;
   orgId: string;
-  org?: {
-    plan: Plan;
-    isUnlimited: boolean;
+  organization?: {
+    id: string;
+    name: string;
   };
 }
+
 export interface RequestWithUser extends Request {
   user: UserSession;
 }

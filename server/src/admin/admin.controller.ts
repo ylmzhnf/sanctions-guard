@@ -2,35 +2,34 @@ import {
   Controller, Get, Post, Patch, Delete, Body, Param, Query,
   UseGuards, Request, ParseIntPipe
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiBody } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { JwtGuard } from '../auth/guard/jwt.guard';
 import { RolesGuard } from '../auth/guard/roles.guard';
 import { Roles } from '../auth/decorator/roles.decorator';
 import { AdminService } from './admin.service';
-import { LicensingService } from '../licensing/licensing.service';
 import { ScreeningService } from '../screening/screening.service';
-import { Role, Plan, LicenseType } from '@prisma/client';
+import { Role } from '@prisma/client';
 
 @ApiTags('Admin Console')
 @ApiBearerAuth()
 @UseGuards(JwtGuard, RolesGuard)
-@Roles(Role.SUPER_ADMIN, Role.ADMIN) 
 @Controller('admin')
 export class AdminController {
   constructor(
     private readonly adminService: AdminService,
-    private readonly licensing: LicensingService,
     private readonly screening: ScreeningService,
   ) {}
 
   @Get('overview')
-  @ApiOperation({ summary: 'Sistem sağlık durumu ve global istatistikler' })
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
+  @ApiOperation({ summary: 'System health and global statistics' })
   async getOverview() {
     return this.adminService.getSystemOverview();
   }
 
   @Get('stats')
-  @ApiOperation({ summary: 'Global stats alias for admin dashboard' })
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
+  @ApiOperation({ summary: 'Global stats for admin dashboard' })
   async getStats() {
     const overview = await this.adminService.getSystemOverview();
     const raw = overview.stats as any;
@@ -38,15 +37,12 @@ export class AdminController {
       totalOrganizations: Number(raw?.totalOrgs ?? 0),
       totalUsers: Number(raw?.totalUsers ?? 0),
       totalQueriesCreated: Number(raw?.totalQueries ?? 0),
-      totalSystemUsage: Number(raw?.systemUsage ?? 0),
       riskDistribution: overview.riskDistribution,
-      appMode: overview.appMode,
-      version: overview.version,
     };
   }
 
-  
   @Get('organizations')
+  @Roles(Role.SUPER_ADMIN)
   async listOrgs(
     @Query('page', new ParseIntPipe({ optional: true })) page = 1,
     @Query('limit', new ParseIntPipe({ optional: true })) limit = 10,
@@ -55,50 +51,15 @@ export class AdminController {
   }
 
   @Post('organizations')
-  @ApiOperation({ summary: 'Yeni kurum oluştur (Enterprise kurulumları için)' })
-  async createOrg(@Body() dto: { name: string; queryLimit?: number }) {
+  @Roles(Role.SUPER_ADMIN)
+  @ApiOperation({ summary: 'Create a new organization' })
+  async createOrg(@Body() dto: { name: string }) {
     return this.adminService.createOrganization(dto);
   }
 
-  
-  @Post('organizations/:id/assign-license')
-  @ApiOperation({ summary: 'Kuruma manuel lisans veya kredi tanımla' })
-  async assignLicense(
-    @Param('id') orgId: string,
-    @Body() dto: { type: LicenseType; credits?: number; expiresAt?: string; notes?: string },
-    @Request() req: any,
-  ) {
-    return this.licensing.assignLicense({
-      ...dto,
-      orgId,
-      issuedById: req.user.id,
-      expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : null,
-    });
-  }
-
-  @Patch('organizations/:id/limits')
-  @ApiOperation({ summary: 'Kurumun tarama ve kullanıcı limitlerini anlık güncelle' })
-  async updateLimits(
-    @Param('id') orgId: string,
-    @Body() dto: { queriesLimit?: number; usersLimit?: number; isUnlimited?: boolean },
-    @Request() req: any,
-  ) {
-    return this.adminService.updateOrganizationLimits(orgId, dto, req.user?.id);
-  }
-
-  @Patch('organizations/:id/license')
-  @ApiOperation({ summary: 'Frontend alias: update plan, limits, or reset queries for an org' })
-  async updateLicense(
-    @Param('id') orgId: string,
-    @Body() dto: { plan?: string; queriesLimit?: number; isUnlimited?: boolean; queriesUsed?: number },
-    @Request() req: any,
-  ) {
-    return this.adminService.updateOrganizationLimits(orgId, dto, req.user?.id);
-  }
-
-  
   @Get('users')
-  @ApiOperation({ summary: 'Sistemdeki tüm kullanıcıları listele' })
+  @Roles(Role.SUPER_ADMIN)
+  @ApiOperation({ summary: 'List all users in the system' })
   async listUsers(
     @Query('page', new ParseIntPipe({ optional: true })) page = 1,
     @Query('limit', new ParseIntPipe({ optional: true })) limit = 20,
@@ -108,23 +69,23 @@ export class AdminController {
   }
 
   @Delete('users/:id')
-  @ApiOperation({ summary: 'Kullanıcıyı askıya al (Soft Delete)' })
+  @Roles(Role.SUPER_ADMIN)
+  @ApiOperation({ summary: 'Deactivate a user (soft delete)' })
   async deactivateUser(@Param('id') id: string) {
-    
     return { message: 'User deactivated' };
   }
 
   @Post('clear-cache')
-  @ApiOperation({ summary: 'Redis cache temizle (screening sonuçları)' })
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
+  @ApiOperation({ summary: 'Clear Redis screening cache' })
   async clearCache() {
     await this.screening.clearCache('screen:*');
     return { message: 'Cache cleared successfully' };
   }
 
-  
   @Patch('settings')
-  @Roles(Role.SUPER_ADMIN) 
-  @ApiOperation({ summary: 'Global sistem ayarlarını güncelle (SMTP, AI, Security)' })
+  @Roles(Role.SUPER_ADMIN)
+  @ApiOperation({ summary: 'Update global system settings' })
   async updateSettings(@Body() settings: Record<string, string>, @Request() req: any) {
     return this.adminService.updateGlobalSettings(settings, req.user.id);
   }

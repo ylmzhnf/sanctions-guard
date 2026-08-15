@@ -13,7 +13,6 @@ import * as bcrypt from 'bcrypt';
 export class UsersService {
   constructor(private readonly prisma: PrismaService) {}
 
-  
   async getUser(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -23,14 +22,13 @@ export class UsersService {
         name: true,
         role: true,
         orgId: true,
-        organization: { select: { name: true, plan: true } },
+        organization: { select: { name: true } },
       },
     });
     if (!user) throw new NotFoundException('Kullanıcı bulunamadı.');
     return user;
   }
 
-  
   async editUser(userId: string, dto: EditUserDto) {
     const updateData: Prisma.UserUpdateInput = {
       name: dto.name,
@@ -48,7 +46,6 @@ export class UsersService {
     });
   }
 
-  
   async getAllUsersInOrg(orgId: string) {
     return this.prisma.user.findMany({
       where: { orgId },
@@ -63,7 +60,6 @@ export class UsersService {
     });
   }
 
-  
   async addUserToOrg(orgId: string, dto: EditUserDto) {
     const email = dto.email?.toLowerCase().trim();
     if (!email || !dto.password) {
@@ -82,12 +78,11 @@ export class UsersService {
         name: dto.name,
         role: dto.role || Role.USER,
         orgId: orgId,
-        mustChangePassword: true, 
+        mustChangePassword: true,
       },
     });
   }
 
-  
   async updateUserRole(adminOrgId: string, targetUserId: string, role: Role) {
     const targetUser = await this.prisma.user.findUnique({
       where: { id: targetUserId },
@@ -115,7 +110,6 @@ export class UsersService {
     return { success: true };
   }
 
-  
   private async hashPassword(password: string): Promise<string> {
     return bcrypt.hash(password, 12);
   }

@@ -5,6 +5,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Database, RefreshCw, Server, Activity, CheckCircle2, Clock, ShieldAlert, Loader2, Info, ArrowRight, AlertTriangle } from "lucide-react";
 import api from "@/lib/api";
 import { useAuthStore } from "@/lib/store";
+import { isAdmin } from "@/lib/auth-utils";
+import { AdminGuard, AccessDenied } from "@/components/RoleGuard";
 import { cn, formatDate } from "@/lib/utils";
 
 export default function DataSyncPage() {
@@ -12,19 +14,19 @@ export default function DataSyncPage() {
   const queryClient = useQueryClient();
   const [syncStatus, setSyncStatus] = useState<{ text: string; type: "success" | "error" | null }>({ text: "", type: null });
 
-  const isAdmin = user?.role === "ADMIN" || user?.role === "SUPER_ADMIN";
+  const userIsAdmin = isAdmin(user);
 
   const { data: statusData, isLoading: statusLoading } = useQuery({
     queryKey: ["sync-status"],
     queryFn: async () => (await api.get("/admin/sanctions-sync/status")).data,
     refetchInterval: 5000,
-    enabled: isAdmin,
+    enabled: userIsAdmin,
   });
 
   const { data: logsData = [], isLoading: logsLoading } = useQuery({
     queryKey: ["sync-logs"],
     queryFn: async () => (await api.get("/admin/sanctions-sync/logs")).data,
-    enabled: isAdmin,
+    enabled: userIsAdmin,
   });
 
   const syncMutation = useMutation({
@@ -41,20 +43,7 @@ export default function DataSyncPage() {
     }
   });
 
-  if (!isAdmin) return (
-    <div className="min-h-[70vh] flex flex-col items-center justify-center text-center p-12">
-      <div className="relative mb-8">
-        <div className="absolute inset-0 bg-destructive/20 blur-3xl rounded-full" />
-        <div className="w-24 h-24 bg-card border border-destructive/30 rounded-3xl flex items-center justify-center relative z-10 shadow-2xl">
-          <ShieldAlert className="w-10 h-10 text-destructive" />
-        </div>
-      </div>
-      <h2 className="text-4xl font-black tracking-tighter italic">Access <span className="text-destructive not-italic">Restricted</span></h2>
-      <p className="text-muted-foreground text-sm mt-3 max-w-sm font-medium leading-relaxed">
-        This system module requires <span className="font-bold text-foreground">ADMIN</span> clearance.
-      </p>
-    </div>
-  );
+  if (!userIsAdmin) return <AccessDenied requiredRole="ADMIN" />;
 
   return (
     <div className="max-w-[1400px] mx-auto space-y-10 animate-in fade-in duration-1000 pb-20 relative font-sans">
@@ -93,7 +82,7 @@ export default function DataSyncPage() {
               "w-full lg:w-auto px-10 py-5 rounded-2xl font-black text-[11px] uppercase tracking-[0.2em] transition-all duration-300 flex items-center justify-center gap-3 shadow-xl",
               (syncMutation.isPending || statusData?.isRunning) 
                 ? "bg-secondary/50 text-muted-foreground cursor-not-allowed border border-border/50 backdrop-blur-md" 
-                : "bg-primary text-primary-foreground hover:scale-[1.02] active:scale-95 shadow-primary/20 hover:shadow-[0_0_30px_rgba(var(--primary),0.3)]"
+                : "bg-primary text-primary-foreground hover:scale-[1.02] active:scale-95 shadow-primary/20 hover:shadow-[0_0_30px_rgba(59,130,246,0.3)]"
             )}
           >
             <RefreshCw className={cn("w-5 h-5", (syncMutation.isPending || statusData?.isRunning) && "animate-spin")} />

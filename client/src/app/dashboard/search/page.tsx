@@ -5,7 +5,6 @@ import { useSearchParams, useRouter } from "next/navigation";
 import {
   Search,
   BrainCircuit,
-  Lock,
   AlertCircle,
   Info,
   Loader2,
@@ -21,7 +20,6 @@ import { Badge } from "@/components/ui/badge";
 import api from "@/lib/api"; 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
-import { useFeatureFlags } from "@/hooks/useFeatureFlags";
 
 const SOURCE_LABELS: Record<string, string> = {
   OFAC: "OFAC (US)",
@@ -55,20 +53,14 @@ type ScreeningResult = {
   };
 };
 
-type ErrorState = {
-  message: string;
-  type: "LIMIT" | "GENERAL";
-} | null;
-
 function SearchContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { allFeaturesUnlocked, aiExplanationEnabled, osintEnabled, bulkScreeningEnabled, isSaas } = useFeatureFlags();
 
   const [name, setName] = useState(searchParams.get("name") || "");
   const [entityType, setEntityType] = useState("");
-  const [error, setError] = useState<ErrorState>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const urlName = searchParams.get("name");
@@ -91,17 +83,7 @@ function SearchContent() {
       queryClient.invalidateQueries({ queryKey: ["dashboard-logs"] });
     },
     onError: (err: any) => {
-      if (err.response?.status === 403) {
-        setError({
-          message: "You have reached your screening limit. Please upgrade your plan.",
-          type: "LIMIT",
-        });
-      } else {
-        setError({
-          message: err.response?.data?.message || "Screening failed. Please try again.",
-          type: "GENERAL",
-        });
-      }
+      setError(err.response?.data?.message || "Screening failed. Please try again.");
     },
   });
 
@@ -164,39 +146,38 @@ function SearchContent() {
   const riskConfig = result ? getRiskConfig(result.riskLevel) : null;
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6 animate-in fade-in duration-500 pb-12">
-      <div className="bg-primary/10 border border-primary/20 rounded-2xl p-4 flex items-start gap-3">
-        <Info className="w-5 h-5 text-primary shrink-0 mt-0.5" />
-        <p className="text-xs text-primary font-medium leading-relaxed">
-          <strong>Pro-Tip:</strong> Screening engine uses fuzzy matching. For
-          better results, use full legal names or vessel IMO numbers. All
-          queries are HMAC-signed for audit integrity.
+    <div className="max-w-5xl mx-auto space-y-5 pb-12">
+      <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 flex items-start gap-3">
+        <Info className="w-4 h-4 text-slate-600 shrink-0 mt-0.5" />
+        <p className="text-sm text-slate-700 leading-relaxed">
+          Fuzzy matching is enabled. Prefer full legal names or vessel IMO numbers.
+          Queries are HMAC-signed for audit integrity.
         </p>
       </div>
 
-      <div className="bg-card p-6 md:p-8 rounded-2xl border border-border shadow-xl">
-        <form onSubmit={handleSearch} className="space-y-4">
-          <div className="flex flex-col md:flex-row gap-4">
-            <div className="relative flex-[2]">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground w-5 h-5" />
+      <div className="bg-card p-4 sm:p-6 rounded-lg border border-border shadow-sm">
+        <form onSubmit={handleSearch} className="space-y-3">
+          <div className="flex flex-col gap-3 md:flex-row md:flex-wrap lg:flex-nowrap">
+            <div className="relative flex-1 min-w-0 md:min-w-[220px]">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground w-4 h-4" />
               <input
                 type="text"
-                placeholder="e.g. Abramovich, Rusal, MV Arctic Sea..."
+                placeholder="e.g. Abramovich, Rusal, MV Arctic Sea…"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 disabled={isSearching}
                 required
-                className="w-full bg-background border border-border rounded-xl pl-12 pr-4 py-4 text-foreground focus:ring-2 focus:ring-primary outline-none transition-all"
+                className="w-full bg-background border border-border rounded-md pl-10 pr-3 py-2.5 text-sm text-foreground focus:ring-2 focus:ring-primary outline-none"
               />
             </div>
 
-            <div className="relative flex-1">
-              <Filter className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground w-5 h-5" />
+            <div className="relative w-full md:w-[180px] shrink-0">
+              <Filter className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground w-4 h-4" />
               <select
                 value={entityType}
                 onChange={(e) => setEntityType(e.target.value)}
                 disabled={isSearching}
-                className="w-full bg-background border border-border rounded-xl pl-12 pr-4 py-4 text-foreground focus:ring-2 focus:ring-primary outline-none transition-all appearance-none cursor-pointer"
+                className="w-full bg-background border border-border rounded-md pl-10 pr-3 py-2.5 text-sm text-foreground focus:ring-2 focus:ring-primary outline-none appearance-none cursor-pointer"
               >
                 <option value="">Any Type</option>
                 <option value="INDIVIDUAL">Individual</option>
@@ -209,50 +190,28 @@ function SearchContent() {
             <button
               type="submit"
               disabled={isSearching}
-              className="bg-primary hover:opacity-90 text-primary-foreground px-8 py-4 rounded-xl font-bold transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-md min-w-[160px]"
+              className="bg-primary hover:bg-primary/90 text-primary-foreground px-5 py-2.5 rounded-md text-sm font-semibold transition-colors disabled:opacity-50 flex items-center justify-center gap-2 w-full md:w-auto shrink-0"
             >
-              {isSearching ? <Loader2 className="w-5 h-5 animate-spin" /> : <Search className="w-5 h-5" />}
-              {isSearching ? "Screening..." : "Screen Now"}
+              {isSearching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+              {isSearching ? "Screening…" : "Screen"}
             </button>
             
             <button
               type="button"
-              onClick={() => {
-                if (bulkScreeningEnabled || allFeaturesUnlocked) {
-                  router.push("/dashboard/search/bulk");
-                } else if (isSaas) {
-                  router.push("/dashboard/billing");
-                }
-              }}
+              onClick={() => router.push("/dashboard/search/bulk")}
               disabled={isSearching}
-              className="bg-secondary text-secondary-foreground hover:bg-muted border border-border px-6 py-4 rounded-xl font-bold transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-sm min-w-[140px]"
+              className="bg-secondary text-secondary-foreground hover:bg-muted border border-border px-4 py-2.5 rounded-md text-sm font-semibold transition-colors disabled:opacity-50 flex items-center justify-center gap-2 w-full md:w-auto shrink-0"
             >
               <FileSpreadsheet className="w-4 h-4" />
               Batch
-              {!(bulkScreeningEnabled || allFeaturesUnlocked) && <Lock className="w-3 h-3 ml-1 text-amber-500" />}
             </button>
           </div>
         </form>
 
         {error && (
-          <div
-            className={clsx(
-              "mt-6 rounded-2xl border p-4 flex flex-col md:flex-row items-center justify-between gap-4 animate-in slide-in-from-top-2",
-              error.type === "LIMIT" ? "bg-destructive/10 border-destructive/20 text-destructive" : "bg-muted border-border text-muted-foreground"
-            )}
-          >
-            <div className="flex items-center gap-3">
-              {error.type === "LIMIT" ? <ShieldAlert className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
-              <p className="text-sm font-semibold">{error.message}</p>
-            </div>
-            {error.type === "LIMIT" && isSaas && (
-              <button
-                onClick={() => router.push("/dashboard/billing")}
-                className="bg-destructive text-white px-6 py-2 rounded-lg font-bold text-xs shadow-md hover:opacity-90 transition-all whitespace-nowrap"
-              >
-                Upgrade Plan
-              </button>
-            )}
+          <div className="mt-6 rounded-2xl border p-4 flex items-center gap-3 bg-destructive/10 border-destructive/20 text-destructive animate-in slide-in-from-top-2">
+            <AlertCircle className="w-5 h-5 shrink-0" />
+            <p className="text-sm font-semibold">{error}</p>
           </div>
         )}
       </div>
@@ -281,62 +240,47 @@ function SearchContent() {
             </div>
           ) : (
             <>
-              <div className={clsx("rounded-3xl p-6 border-2 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-xl", riskConfig.bg)}>
-                <div className="flex items-center gap-4">
-                  <div className={clsx("w-3 h-3 rounded-full animate-pulse shadow-[0_0_12px]", `bg-${riskConfig.color.split("-")[1]}-500`)} />
-                  <div>
-                    <h3 className="font-bold text-foreground text-xl">Potential Match Detected</h3>
+              <div className={clsx("rounded-lg p-4 sm:p-5 border flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm", riskConfig.bg)}>
+                <div className="flex items-center gap-3 min-w-0">
+                  <ShieldAlert className={clsx("w-5 h-5 shrink-0", riskConfig.color)} />
+                  <div className="min-w-0">
+                    <h3 className="font-semibold text-foreground text-base">Potential match detected</h3>
                     <p className="text-sm text-muted-foreground">Found {result.count} records matching your query.</p>
                   </div>
                 </div>
                 
-                <div className="flex items-center gap-4">
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
                   {result.queryId && (
                      <button
                         onClick={() => handleDownloadReport(result.queryId!)}
-                        className="flex items-center gap-2 bg-background border border-border hover:bg-secondary/50 px-4 py-2 rounded-lg text-sm font-bold transition-all shadow-sm"
+                        className="flex items-center gap-2 bg-background border border-border hover:bg-slate-50 px-3 py-2 rounded-md text-sm font-medium transition-colors"
                       >
                        <Download className="w-4 h-4" /> PDF Report
-                     </button>
+                      </button>
                   )}
-                  <Badge variant={riskConfig.variant as any} className="px-6 py-2 uppercase text-xs font-black tracking-widest shadow-md">
+                  <Badge variant={riskConfig.variant as any} className="px-3 py-1.5 uppercase text-xs font-semibold tracking-wide">
                     {result.riskLevel} RISK
                   </Badge>
                 </div>
               </div>
 
-              {(aiExplanationEnabled || allFeaturesUnlocked) ? (
-                result.aiExplanation && (
-                  <div className="bg-card rounded-3xl border border-border overflow-hidden shadow-xl">
-                    <div className="p-5 border-b border-border bg-primary/5 flex items-center gap-2">
-                      <BrainCircuit className="w-5 h-5 text-primary" />
-                      <h2 className="font-bold text-foreground text-xs uppercase tracking-widest">AI Contextual Analysis</h2>
-                    </div>
-                    <div className="p-8">
-                      <p className="text-foreground/90 text-sm leading-relaxed whitespace-pre-wrap italic">
-                        "{result.aiExplanation}"
-                      </p>
-                    </div>
+              {result.aiExplanation && (
+                <div className="bg-card rounded-3xl border border-border overflow-hidden shadow-xl">
+                  <div className="p-5 border-b border-border bg-primary/5 flex items-center gap-2">
+                    <BrainCircuit className="w-5 h-5 text-primary" />
+                    <h2 className="font-bold text-foreground text-xs uppercase tracking-widest">AI Contextual Analysis</h2>
                   </div>
-                )
-              ) : isSaas ? (
-                <div className="bg-card rounded-3xl border border-border overflow-hidden shadow-sm p-6 flex flex-col md:flex-row items-center justify-between gap-4">
-                  <div className="flex items-center gap-3">
-                    <div className="bg-muted p-2 rounded-full"><BrainCircuit className="w-5 h-5 text-muted-foreground" /></div>
-                    <div>
-                      <h3 className="font-bold text-sm">AI Resolution Matrix Locked</h3>
-                      <p className="text-xs text-muted-foreground">Upgrade your plan to unlock automated false-positive reduction.</p>
-                    </div>
+                  <div className="p-8">
+                    <p className="text-foreground/90 text-sm leading-relaxed whitespace-pre-wrap italic">
+                      "{result.aiExplanation}"
+                    </p>
                   </div>
-                  <button onClick={() => router.push("/dashboard/billing")} className="bg-primary text-primary-foreground px-4 py-2 rounded-lg text-xs font-bold whitespace-nowrap">
-                    Upgrade to Unlock
-                  </button>
                 </div>
-              ) : null}
+              )}
 
-              {(osintEnabled || allFeaturesUnlocked) ? (
-                result.osintResults && (result.osintResults.news?.length > 0 || result.osintResults.social?.length > 0) && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {result.osintResults && (result.osintResults.news?.length > 0 || result.osintResults.social?.length > 0) && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {result.osintResults.news?.length > 0 && (
                     <div className="bg-card rounded-2xl border border-border p-6 shadow-lg">
                       <h2 className="font-bold text-foreground mb-4 flex items-center gap-2">
                         <Newspaper className="w-5 h-5 text-blue-500" /> Recent News
@@ -356,7 +300,9 @@ function SearchContent() {
                         ))}
                       </div>
                     </div>
+                  )}
 
+                  {result.osintResults.social?.length > 0 && (
                     <div className="bg-card rounded-2xl border border-border p-6 shadow-lg">
                       <h2 className="font-bold text-foreground mb-4 flex items-center gap-2">
                         <Globe className="w-5 h-5 text-purple-500" /> Social & Web
@@ -374,19 +320,9 @@ function SearchContent() {
                         ))}
                       </div>
                     </div>
-                  </div>
-                )
-              ) : isSaas ? (
-                 <div className="bg-card rounded-2xl border border-border p-5 shadow-sm flex items-center justify-between gap-4">
-                   <div className="flex items-center gap-3">
-                     <Globe className="w-5 h-5 text-muted-foreground" />
-                     <p className="text-sm font-semibold">Web Intelligence (OSINT) is disabled.</p>
-                   </div>
-                   <button onClick={() => router.push("/dashboard/billing")} className="text-xs font-bold text-primary hover:underline flex items-center gap-1">
-                     <Lock className="w-3 h-3" /> Upgrade
-                   </button>
-                 </div>
-              ) : null}
+                  )}
+                </div>
+              )}
 
               {result.data && result.data.length > 0 && (
                 <div className="bg-card rounded-2xl border border-border overflow-hidden shadow-lg">

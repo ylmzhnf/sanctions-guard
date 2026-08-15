@@ -23,11 +23,9 @@ export class AuthService {
     private readonly audit: AuditService,
   ) {}
 
-  
   async register(dto: RegisterDto) {
     const email = dto.email.toLowerCase().trim();
 
-    
     const existing = await this.prisma.user.findUnique({ where: { email } });
     if (existing) {
       throw new ConflictException('Bu e-posta adresi zaten kullanımda.');
@@ -36,15 +34,12 @@ export class AuthService {
     const passwordHash = await bcrypt.hash(dto.password, 12);
 
     try {
-      
       const { user, org } = await this.prisma.$transaction(async (tx) => {
         const newOrg = await tx.organization.create({
           data: {
             name:
               dto.orgName ||
               `${dto.name || email.split('@')[0]}'s Organization`,
-            plan: 'FREE',
-            queriesLimit: 10,
           },
         });
 
@@ -54,14 +49,13 @@ export class AuthService {
             passwordHash,
             name: dto.name,
             orgId: newOrg.id,
-            role: Role.ADMIN, 
+            role: Role.ADMIN,
           },
         });
 
         return { user: newUser, org: newOrg };
       });
 
-      
       await this.audit.log({
         action: 'USER_REGISTERED',
         actorId: user.id,
@@ -83,7 +77,6 @@ export class AuthService {
     }
   }
 
-  
   async login(dto: LoginDto) {
     const email = dto.email.toLowerCase().trim();
     const invalidMsg = 'Geçersiz e-posta veya şifre.';
@@ -93,7 +86,6 @@ export class AuthService {
       include: { organization: true },
     });
 
-    
     if (!user || !user.isActive) {
       this.logger.warn(
         `Giriş başarısız (Kullanıcı bulunamadı veya pasif): ${email}`,
@@ -101,7 +93,6 @@ export class AuthService {
       throw new UnauthorizedException(invalidMsg);
     }
 
-    
     const isPasswordValid = await bcrypt.compare(
       dto.password,
       user.passwordHash,
@@ -111,14 +102,12 @@ export class AuthService {
       throw new UnauthorizedException(invalidMsg);
     }
 
-    
     if (!user.organization) {
       throw new UnauthorizedException(
         'Kullanıcı bir organizasyona bağlı değil.',
       );
     }
 
-    
     await this.audit.log({
       action: 'USER_LOGIN',
       actorId: user.id,
@@ -135,7 +124,6 @@ export class AuthService {
     return { token, user: this.formatUserResponse(user, user.organization) };
   }
 
-  
   async getMe(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -147,7 +135,6 @@ export class AuthService {
     return this.formatUserResponse(user, user.organization!);
   }
 
-  
   private signToken(
     userId: string,
     email: string,
@@ -157,7 +144,6 @@ export class AuthService {
     return this.jwtService.sign({ sub: userId, email, orgId, role });
   }
 
-  
   private formatUserResponse(user: User, org: Organization) {
     return {
       id: user.id,
@@ -168,10 +154,6 @@ export class AuthService {
       organization: {
         id: org.id,
         name: org.name,
-        plan: org.plan,
-        queriesUsed: org.queriesUsed,
-        queriesLimit: org.queriesLimit,
-        isUnlimited: org.isUnlimited,
       },
     };
   }

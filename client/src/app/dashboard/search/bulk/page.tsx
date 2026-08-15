@@ -5,18 +5,14 @@ import { useRouter } from "next/navigation";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { 
   Upload, FileText, Type, CheckCircle2, AlertTriangle, 
-  Loader2, ArrowRight, Database, X, ChevronRight, Layers
+  Loader2, ArrowRight, Database, X, Layers
 } from "lucide-react";
 import api from "@/lib/api";
-import { useFeatureFlags } from "@/hooks/useFeatureFlags";
-import { useAuthStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 export default function BulkScreeningPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { bulkScreeningEnabled } = useFeatureFlags();
-  const { user } = useAuthStore();
   
   const [activeTab, setActiveTab] = useState<"upload" | "manual">("upload");
   const [manualText, setManualText] = useState("");
@@ -25,7 +21,6 @@ export default function BulkScreeningPage() {
   
   const [status, setStatus] = useState<{ text: string; type: "success" | "error" | null }>({ text: "", type: null });
 
-  // Handle file selection
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -33,7 +28,6 @@ export default function BulkScreeningPage() {
     const reader = new FileReader();
     reader.onload = (event) => {
       const content = event.target?.result as string;
-      // Split by newline or comma, clean up empty spaces
       const rawNames = content.split(/[\n,]/).map(n => n.trim()).filter(n => n.length > 1);
       
       if (rawNames.length === 0) {
@@ -97,27 +91,6 @@ export default function BulkScreeningPage() {
     bulkMutation.mutate(finalNames);
   };
 
-  if (!bulkScreeningEnabled) {
-    return (
-      <div className="min-h-[70vh] flex flex-col items-center justify-center text-center p-12">
-        <div className="w-24 h-24 bg-card border border-destructive/30 rounded-3xl flex items-center justify-center shadow-2xl mb-8 relative">
-          <div className="absolute inset-0 bg-destructive/20 blur-xl rounded-full" />
-          <AlertTriangle className="w-10 h-10 text-destructive relative z-10" />
-        </div>
-        <h2 className="text-4xl font-black tracking-tighter italic">Feature <span className="text-destructive not-italic">Locked</span></h2>
-        <p className="text-muted-foreground text-sm mt-3 max-w-sm font-medium leading-relaxed">
-          Toplu tarama (Bulk Screening) işlemi mevcut abonelik planınızda bulunmuyor. Lütfen daha yüksek bir plana geçiş yapın.
-        </p>
-      </div>
-    );
-  }
-
-  const queriesUsed = user?.org?.queriesUsed || 0;
-  const queriesLimit = user?.org?.queriesLimit || 1;
-  const isUnlimited = queriesLimit === -1;
-  const remaining = isUnlimited ? "Unlimited" : Math.max(0, queriesLimit - queriesUsed);
-  const maxAllowed = Math.min(1000, isUnlimited ? 1000 : remaining as number);
-
   const currentCount = activeTab === "upload" 
     ? (fileData?.names.length || 0) 
     : manualText.split(/[\n,]/).map(n => n.trim()).filter(n => n.length > 1).length;
@@ -145,12 +118,12 @@ export default function BulkScreeningPage() {
         <div className="bg-card/60 backdrop-blur-xl border border-border/50 p-6 rounded-3xl flex items-center gap-5 shadow-xl hover:shadow-primary/5 transition-all text-right">
           <div>
             <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground mb-1">Batch Limit</p>
-            <p className="text-2xl font-black text-foreground tracking-tighter">{maxAllowed}</p>
+            <p className="text-2xl font-black text-foreground tracking-tighter">1000</p>
           </div>
           <div className="w-[1px] h-10 bg-border/50" />
           <div>
             <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground mb-1">Input Detected</p>
-            <p className={cn("text-2xl font-black tracking-tighter", currentCount > maxAllowed ? "text-destructive" : "text-emerald-500")}>
+            <p className={cn("text-2xl font-black tracking-tighter", currentCount > 1000 ? "text-destructive" : "text-emerald-500")}>
               {currentCount}
             </p>
           </div>
@@ -160,7 +133,7 @@ export default function BulkScreeningPage() {
       {/* Main Workspace */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 relative z-10">
         
-        {/* Left Side: Input Method Selection & Input Area */}
+        {/* Left Side */}
         <div className="lg:col-span-2 space-y-6">
           <div className="bg-card/60 backdrop-blur-xl rounded-[2.5rem] border border-border/50 shadow-xl overflow-hidden flex flex-col">
             
@@ -248,7 +221,7 @@ export default function BulkScreeningPage() {
           </div>
         </div>
 
-        {/* Right Side: Action Panel */}
+        {/* Right Side */}
         <div className="space-y-6">
           <div className="bg-primary/5 border border-primary/20 p-8 rounded-[2.5rem] relative overflow-hidden">
             <div className="absolute top-0 right-0 w-32 h-32 bg-primary/20 blur-3xl rounded-full" />
@@ -282,7 +255,7 @@ export default function BulkScreeningPage() {
 
             <button
               onClick={handleRunScreening}
-              disabled={bulkMutation.isPending || currentCount === 0 || currentCount > maxAllowed}
+              disabled={bulkMutation.isPending || currentCount === 0 || currentCount > 1000}
               className="w-full bg-primary text-primary-foreground py-5 rounded-2xl font-black text-xs uppercase tracking-[0.2em] shadow-xl shadow-primary/20 transition-all hover:scale-[1.02] active:scale-95 disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center gap-3 relative z-10"
             >
               {bulkMutation.isPending ? (

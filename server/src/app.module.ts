@@ -11,6 +11,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { SanctionsSyncModule } from './sanctions-sync/sanctions-sync.module';
 import { AdminModule } from './admin/admin.module';
 import { SettingsModule } from './settings/settings.module';
+import { NotificationsModule } from './notifications/notifications.module';
 import { BullModule } from '@nestjs/bullmq';
 
 @Module({
@@ -31,6 +32,7 @@ import { BullModule } from '@nestjs/bullmq';
     SanctionsSyncModule,
     AdminModule,
     SettingsModule,
+    NotificationsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

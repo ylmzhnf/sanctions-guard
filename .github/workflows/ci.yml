@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: sg_admin
+          POSTGRES_PASSWORD: strongpassword
+          POSTGRES_DB: sanctions_guard_test
+        ports:
+          - 5436:5432
+        options: >-
+          --health-cmd="pg_isready -U sg_admin -d sanctions_guard_test"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+
+    env:
+      DATABASE_URL: postgresql://sg_admin:strongpassword@localhost:5436/sanctions_guard_test
+      REDIS_URL: redis://localhost:6379
+      JWT_SECRET: test-secret-value
+      PORT: 3001
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 9
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint frontend
+        run: pnpm --filter client run lint
+
+      - name: Type-check frontend
+        run: pnpm --filter client exec tsc --noEmit
+
+      - name: Build backend
+        run: pnpm --filter server run build

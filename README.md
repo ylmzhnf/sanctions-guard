@@ -1,273 +1,157 @@
-# 🛡️ Sanctions-Guard
+# Sanctions-Guard
 
-**Real-time sanctions screening platform** — runs as SaaS or Enterprise internal tool.
-
-[![Stack](https://img.shields.io/badge/stack-NestJS%20%7C%20Next.js%2014%20%7C%20PostgreSQL%20%7C%20Redis-blue)]()
-[![Mode](https://img.shields.io/badge/mode-SaaS%20%7C%20Enterprise-purple)]()
-[![Docker](https://img.shields.io/badge/deploy-docker--compose%20up%20-d-green)]()
-
----
-
-## Table of Contents
-
-- [Overview](#overview)
-- [Modes](#modes)
-- [Quick Start](#quick-start)
-- [Architecture](#architecture)
-- [API Reference](#api-reference)
-- [Admin Dashboard](#admin-dashboard)
-- [Configuration](#configuration)
-- [Development](#development)
-
----
+Sanctions-Guard is a focused RegTech MVP designed to help compliance teams detect high-risk entities by comparing names against sanctions lists using fuzzy matching and AI-assisted explanations.
 
 ## Overview
 
-Sanctions-Guard screens entities (individuals, companies, vessels) against **OFAC, EU, UN, and UK HMT** sanctions lists using fuzzy name matching and AI-powered risk explanations.
+This project demonstrates a practical sanctions screening workflow for a modern compliance product:
 
-### Key Features
+- Fuzzy name matching for near-miss entity detection
+- AI-generated explanation for why a match is risky
+- Immutable audit trail for screening queries
+- Clean, professional dashboard for investigation workflows
+- Dockerized local development environment for rapid iteration
 
-| Feature | SaaS | Enterprise |
-|---------|------|-----------|
-| Levenshtein + Token matching | ✓ | ✓ |
-| PostgreSQL trigram similarity | ✓ | ✓ |
-| AI risk explanations (Claude) | ✓ | ✓ |
-| HMAC-signed audit log | ✓ | ✓ |
-| Admin dashboard | ✓ | ✓ |
-| License management | ✓ | ✓ |
-| Stripe billing | ✓ | — |
-| Plan limits | ✓ | — |
-| Query/user limits | ✓ | — (unlimited) |
-| All features unlocked | — | ✓ |
-| White-label | — | ✓ |
+## Core Technical Stack
 
----
+- Frontend: Next.js + Tailwind CSS
+- Backend: NestJS
+- Database: PostgreSQL + Prisma
+- Caching: Redis
+- AI: OpenAI or Anthropic API
 
-## Modes
+## Core MVP Features
 
-### SaaS Mode (`APP_MODE=saas`)
+### 1. Fuzzy Matching
 
-- Stripe subscription billing active
-- Plan limits enforced (FREE: 10 queries, STARTER: 500, BUSINESS: 10,000)
-- Feature gating by plan
-- Admin can still manually override limits per org
+- Detects near matches such as "Abramovich" vs "Abramovitz"
+- Uses similarity scoring and token-based comparisons to surface likely matches
+- Prioritizes the most relevant results for analyst review
 
-### Enterprise Mode (`APP_MODE=enterprise`)
+### 2. AI Risk Explanation
 
-- No Stripe — all billing endpoints return 404
-- All features unlocked for all users
-- No query or user limits
-- Admin dashboard for license/credit management
+- Sends the match context to an LLM
+- Produces a concise, compliance-focused explanation of why the result is risky
+- Helps non-technical users understand the reason behind an alert
 
-**Switching modes:** Change `APP_MODE` in `.env` and restart containers. The application logs the active mode on startup.
+### 3. Immutable Audit Log
 
----
+- Stores screening actions in a persistent audit trail
+- Captures who ran the query and what risk context was associated with it
+- Keeps a historical record suitable for internal review and compliance evidence
+
+### 4. Modern UI/UX
+
+- Clean, professional dashboard layout
+- Clear typography hierarchy and readable spacing
+- RegTech style visual system for trust, clarity, and operational efficiency
+
+### 5. Local Infra and CI Baseline
+
+- Docker Compose setup for database and cache
+- Basic CI-ready project structure for automated validation
+
+## Project Structure
+
+```bash
+.
+├── client/                   # Next.js frontend
+├── server/                   # NestJS backend
+├── docker-compose.yml        # Local infrastructure configuration
+├── README.md                 # Project overview and setup guide
+└── .gitignore
+```
 
 ## Quick Start
 
-### 1. Configure
+### 1. Install dependencies
 
 ```bash
-cp installer/.env.template .env
-nano .env    # Fill in required values
+cd server && npm install
+cd ../client && npm install
 ```
 
-**Minimum required values:**
-```env
-APP_MODE=saas            # or enterprise
-ADMIN_EMAIL=admin@example.com
-ADMIN_PASSWORD=SecurePass123!
-POSTGRES_PASSWORD=strongpassword
-REDIS_PASSWORD=strongpassword
-JWT_SECRET=64-char-hex-string    # openssl rand -hex 32
-ANTHROPIC_API_KEY=sk-ant-...
-```
-
-### 2. Start
+### 2. Start infrastructure
 
 ```bash
-docker-compose -f installer/docker-compose.yml up -d
+cd server
+npm run docker:up
 ```
 
-### 3. Verify
+### 3. Run backend
 
 ```bash
-# Health check
-curl http://localhost:3001/api/v1/health
-# Expected: {"status":"ok","mode":"saas","db":"ok"}
-
-# Open Swagger UI
-open http://localhost:3001/api/docs
-
-# Open frontend
-open http://localhost:3000
+cd server
+npm run start:dev
 ```
 
-### 4. Initial Data Sync
+### 4. Run frontend
 
 ```bash
-# Login as admin and get token
-TOKEN=$(curl -s -X POST http://localhost:3001/api/v1/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"admin@example.com","password":"ChangeMe123!"}' \
-  | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])")
-
-# Trigger OFAC sanctions list sync
-curl -X POST http://localhost:3001/api/v1/admin/sanctions-sync/trigger \
-  -H "Authorization: Bearer $TOKEN"
+cd client
+npm run dev
 ```
 
----
+### 5. Default local URLs
 
-## Architecture
+- Frontend: http://localhost:3000
+- Backend API: http://localhost:3001
+- PostgreSQL: localhost:5435
+- Redis: localhost:6379
 
-### Matching Algorithm
+## Environment Variables
 
-The platform uses a **hybrid multi-stage matching system** for maximum accuracy:
+Create a `.env` file in the server project and include the required keys:
 
-**Stage 1: PostgreSQL Trigram Pre-filter**
-- Uses `pg_trgm` extension for fast similarity search
-- Threshold: `similarity(name, query) >= 0.15`
-- Returns top 50 candidates per query
-
-**Stage 2: Levenshtein Distance**
-- Calculates edit distance between query and candidate
-- Normalizes to 0-100 score
-- Handles typos and minor variations
-
-**Stage 3: Token-Based Matching**
-- Splits names into tokens (words)
-- Checks if all query tokens exist in target name
-- Handles cases like "Vladimir Putin" → "Vladimir Vladimirovich Putin"
-- Boosts score to 85-99 when all tokens match
-
-**Stage 4: Risk Classification**
-```
-Score ≥ 95% → CRITICAL (exact/near-exact match)
-Score ≥ 85% → HIGH (strong match, review required)
-Score ≥ 70% → MEDIUM (possible match)
-Score ≥ 50% → LOW (weak match, flag for awareness)
-Score < 50% → CLEAR (no significant match)
-```
-
-**Example:**
-```
-Query: "Vladimir Putin"
-Database: "VLADIMIR VLADIMIROVICH PUTIN"
-
-Stage 1: PostgreSQL trigram → 0.65 similarity → passes
-Stage 2: Levenshtein → 50% (length difference)
-Stage 3: Token match → ["vladimir", "putin"] all found → 94%
-Final Score: 94% → HIGH risk
-```
-
----
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    Nginx (Port 80/443)                      │
-│              SSL termination + reverse proxy                │
-└───────────────┬─────────────────────┬───────────────────────┘
-                │                     │
-    ┌───────────▼───────┐   ┌─────────▼──────────┐
-    │  Next.js Frontend │   │   NestJS Backend    │
-    │    (Port 3000)    │   │    (Port 3001)      │
-    │                   │   │                     │
-    │  Feature flags ←──┼───┼── APP_MODE env      │
-    │  ModeGate comps   │   │  AppConfigService   │
-    │  Admin dashboard  │   │  ModeGuard (bypass) │
-    └───────────────────┘   │  QueryLimitGuard    │
-                            │  PlanFeatureGuard   │
-                            └────────┬───────────┘
-                                     │
-               ┌─────────────────────┼────────────────────┐
-               │                     │                    │
-    ┌──────────▼──────┐  ┌───────────▼────┐  ┌──────────▼──────┐
-    │  PostgreSQL     │  │  Redis Cache   │  │ Anthropic API  │
-    │  (Port 5432)    │  │  (Port 6379)   │  │  (External)    │
-    │  Internal net   │  │  Internal net  │  │                │
-    └─────────────────┘  └────────────────┘  └────────────────┘
-```
-
-### Mode Guard Flow
-
-```
-Request → JwtAuthGuard → ModeGuard → QueryLimitGuard → Controller
-                             │               │
-                    Enterprise: pass   Enterprise: bypass
-                    SaaS: check mode   SaaS: check DB limit
-```
-
-### Screening Pipeline (13 Steps)
-
-```
-1. JWT validate    → 8.  Persist query + matches
-2. License check   → 9.  Write HMAC audit log
-3. Cache check     → 10. Cache result (1hr TTL)
-4. Load entities   → 11. Increment usage counter
-5. PostgreSQL trgm → 12. Return JSON response
-6. Levenshtein+tok → 13. Frontend renders result
-7. Risk scoring    →
-```
-
----
-
-## API Reference
-
-Interactive Swagger UI: `http://localhost:3001/api/docs`
-
-### Authentication
-
-All protected endpoints require: `Authorization: Bearer <token>`
-
-Get token:
 ```bash
-curl -X POST /api/v1/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"email": "user@example.com", "password": "password"}'
+DATABASE_URL="postgresql://..."
+JWT_SECRET="your-secret"
+OPENAI_API_KEY="..."
+# or ANTHROPIC_API_KEY="..."
+REDIS_URL="redis://localhost:6379"
 ```
 
-### Core Endpoints
+## MVP Scope
 
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| `POST` | `/api/v1/auth/register` | Public | Register user + org |
-| `POST` | `/api/v1/auth/login` | Public | Get JWT token |
-| `GET`  | `/api/v1/auth/me` | JWT | Current user info |
-| `POST` | `/api/v1/screening/screen` | JWT | Screen entity |
-| `GET`  | `/api/v1/screening/history` | JWT | Query history |
-| `GET`  | `/api/v1/audit/logs` | JWT | Audit log |
-| `GET`  | `/api/v1/audit/verify/:id` | JWT | Verify log integrity |
-| `GET`  | `/api/v1/health` | Public | System health |
+This project intentionally focuses on the core workflow only:
 
-### Admin Endpoints (ADMIN role)
+- sanctions screening input
+- fuzzy matching
+- AI explanation
+- audit trail
+- polished dashboard experience
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET`  | `/api/v1/admin/system` | System info + mode |
-| `GET`  | `/api/v1/admin/stats` | Query statistics |
-| `GET`  | `/api/v1/admin/organizations` | List all orgs |
-| `POST` | `/api/v1/admin/organizations` | Create org |
-| `POST` | `/api/v1/admin/licenses/assign` | Assign license |
-| `POST` | `/api/v1/admin/licenses/revoke/:orgId` | Revoke license |
-| `PATCH`| `/api/v1/admin/organizations/:id/limits` | Update limits |
-| `GET`  | `/api/v1/admin/users` | List users |
-| `PATCH`| `/api/v1/admin/users/:id` | Update user |
-| `GET`  | `/api/v1/admin/settings` | System settings |
-| `PATCH`| `/api/v1/admin/settings` | Update settings |
-| `POST` | `/api/v1/admin/sanctions-sync/trigger` | Trigger sync |
+The following are intentionally out of scope for this MVP:
 
-### SaaS-only Endpoints (404 in Enterprise)
+- billing and subscriptions
+- SaaS/enterprise mode branching
+- enterprise license logic
+- plan-based feature gating
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/api/v1/billing/checkout` | Stripe checkout |
-| `POST` | `/api/v1/billing/portal` | Billing portal |
-| `POST` | `/api/v1/billing/webhook` | Stripe webhook |
+## Typical User Flow
 
-### Example: Screen Request
+1. User enters a name to screen
+2. Backend compares it against sanctions data using fuzzy matching
+3. System calculates risk level and relevant matches
+4. AI model explains the risk in plain language
+5. Query and results are stored in the audit log
+6. Analyst reviews the result in the dashboard
+
+## Validation
+
+For MVP validation, confirm the following flows:
+
+- login works correctly
+- screening query returns a result
+- fuzzy match score is reasonable
+- AI explanation is clear and operationally useful
+- audit log captures the request
+
+## Notes
+
+This is a portfolio-focused MVP, not a production-grade multi-tenant SaaS platform. It is designed to prove product understanding, systems thinking, and strong execution in compliance tooling.
+
+## Example: Screen Request
 
 ```bash
 curl -X POST http://localhost:3001/api/v1/screening/screen \
@@ -277,6 +161,7 @@ curl -X POST http://localhost:3001/api/v1/screening/screen \
 ```
 
 Response:
+
 ```json
 {
   "query": {
@@ -301,77 +186,27 @@ Response:
 
 ---
 
-## Admin Dashboard
-
-Access at `/dashboard/admin` (requires ADMIN or SUPER_ADMIN role).
-
-### Assigning Licenses
-
-The admin can assign any license type to any organization without developer involvement:
-
-```
-License Types:
-  UNLIMITED   → No limits — all features — ideal for Enterprise customers
-  CREDIT      → X queries total — depletes on use
-  SUBSCRIPTION → Plan-based (synced with Stripe in SaaS mode)
-  CUSTOM      → Admin-defined custom behavior
-```
-
-**Via API:**
-```bash
-curl -X POST http://localhost:3001/api/v1/admin/licenses/assign \
-  -H "Authorization: Bearer <admin-token>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "orgId": "clx123...",
-    "type": "UNLIMITED",
-    "credits": null,
-    "expiresAt": "2026-12-31",
-    "notes": "Annual enterprise deal"
-  }'
-```
-
-**Via UI:** Go to Admin → click "Assign License" next to any organization.
-
----
-
 ## Configuration
 
 ### Risk Level Thresholds
 
-| Level | Similarity Score | Action |
-|-------|-----------------|--------|
-| CRITICAL | ≥ 97% | Immediate review — block transaction |
-| HIGH | ≥ 85% | Human review required |
-| MEDIUM | ≥ 70% | Review recommended |
-| LOW | ≥ 55% | Flag for awareness |
-| CLEAR | < 55% | No action required |
-
-### System Settings (Admin-configurable)
-
-| Key | Default | Description |
-|-----|---------|-------------|
-| `app_name` | Sanctions-Guard | Displayed in UI |
-| `default_query_limit` | 10 (SaaS) / -1 (Enterprise) | New org default |
-| `ai_enabled` | true | Enable AI explanations |
-| `osint_enabled` | false (SaaS) / true (Enterprise) | Enable OSINT enrichment |
-
----
-
+| Level    | Similarity Score | Action                               |
+| -------- | ---------------- | ------------------------------------ |
+| CRITICAL | ≥ 97%            | Immediate review — block transaction |
+| HIGH     | ≥ 85%            | Human review required                |
+| MEDIUM   | ≥ 70%            | Review recommended                   |
+| LOW      | ≥ 55%            | Flag for awareness                   |
+| CLEAR    | < 55%            | No action required                   |
 
 ### Environment Variables Reference
 
-| Variable | Required | Description |
-|----------|---------|-------------|
-| `APP_MODE` | ✓ | `saas` or `enterprise` |
-| `DATABASE_URL` | ✓ | PostgreSQL connection string |
-| `REDIS_URL` | ✓ | Redis connection string |
-| `JWT_SECRET` | ✓ | 64-char hex string |
-| `ANTHROPIC_API_KEY` | ✓ | Claude API key |
-| `ADMIN_EMAIL` | ✓ | First admin user email |
-| `ADMIN_PASSWORD` | ✓ | First admin user password |
-| `STRIPE_SECRET_KEY` | SaaS only | Stripe secret key |
-| `STRIPE_WEBHOOK_SECRET` | SaaS only | Stripe webhook signing secret |
+| Variable            | Required | Description                       |
+| ------------------- | -------- | --------------------------------- |
+| `DATABASE_URL`      | ✓        | PostgreSQL connection string      |
+| `REDIS_URL`         | ✓        | Redis connection string           |
+| `JWT_SECRET`        | ✓        | 64-char hex string                |
+| `OPENAI_API_KEY`    | ✓        | OpenAI API key (or use Anthropic) |
+| `ANTHROPIC_API_KEY` | ✓        | Anthropic API key (or use OpenAI) |
 
 ---
 

@@ -7,7 +7,6 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 export function formatScore(score: number): string {
-  
   return `${(score * 100).toFixed(1)}%`;
 }
 
@@ -25,12 +24,4 @@ export const RISK_CONFIG: Record<RiskLevel, any> = {
   MEDIUM:   { label: "Medium",   bg: "bg-orange-500/10",   text: "text-orange-600",  border: "border-orange-200" },
   HIGH:     { label: "High",     bg: "bg-red-500/10",      text: "text-red-600",     border: "border-red-200" },
   CRITICAL: { label: "Critical", bg: "bg-red-600/20",      text: "text-red-700",     border: "border-red-500" },
-};
-
-export const PLAN_LABELS: Record<string, string> = {
-  FREE:        "Free",
-  STARTER:     "Starter",
-  BUSINESS:    "Business",
-  ENTERPRISE:  "Enterprise",
-  SELF_HOSTED: "Self-Hosted",
 };

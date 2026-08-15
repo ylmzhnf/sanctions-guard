@@ -1,4 +1,4 @@
-import { Injectable, ForbiddenException, Logger } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { Queue } from 'bullmq';
 import { InjectQueue } from '@nestjs/bullmq';
 import { randomUUID } from 'crypto';
@@ -9,6 +9,7 @@ import { RedisService } from '../common/redis/redis.service';
 import { AuditService } from '../audit/audit.service';
 import { OsintService, OsintResult } from '../osint/osint.service';
 import { AiExplainerService } from '../ai-explainer/ai-explainer.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { ScreenQueryDto } from './dto/query-bulk-screening.dto';
 
 const SIMILARITY_THRESHOLDS = {
@@ -28,6 +29,7 @@ export class ScreeningService {
     private readonly aiExplainer: AiExplainerService,
     private readonly audit: AuditService,
     private readonly osint: OsintService,
+    private readonly notificationsService: NotificationsService,
     @InjectQueue('bulk-screening-queue') private readonly bulkQueue: Queue,
   ) {}
 
@@ -121,13 +123,7 @@ export class ScreeningService {
       include: { settings: true },
     });
 
-    const isEnterprise = process.env.APP_MODE === 'enterprise';
-    const isUnlimited = isEnterprise || org.isUnlimited || org.queriesLimit === -1;
-
-    if (!isUnlimited && org.queriesUsed >= org.queriesLimit) {
-      throw new ForbiddenException(`Monthly query limit (${org.queriesLimit}) reached. Please upgrade your SaaS plan.`);
-    }
-
+    // Check Redis cache
     const normalizedQuery = queryName.toLowerCase().replace(/\s+/g, '_');
     const cacheKey = `screen:v3:${orgId}:${normalizedQuery}:${entityType || 'ALL'}`;
 
@@ -226,36 +222,27 @@ export class ScreeningService {
       }
     }
 
-    const queryRecord = await this.prisma.$transaction(async (tx) => {
-      const createdQuery = await tx.screeningQuery.create({
-        data: {
-          queryName,
-          status: ScreeningStatus.COMPLETED,
-          riskLevel,
-          matchCount: topMatches.length,
-          aiExplanation,
-          osintResults: osintResults ? (osintResults as any) : Prisma.JsonNull,
-          userId,
-          orgId,
-          matches: {
-            create: topMatches.map((m) => ({
-              matchedEntityId: m.id,
-              matchedName: m.matchedName,
-              similarityScore: m.score / 100,
-              matchedField: m.matchedField,
-              listSource: m.listSource,
-            })),
-          },
+    const queryRecord = await this.prisma.screeningQuery.create({
+      data: {
+        queryName,
+        status: ScreeningStatus.COMPLETED,
+        riskLevel,
+        matchCount: topMatches.length,
+        aiExplanation,
+        osintResults: osintResults ? (osintResults as any) : Prisma.JsonNull,
+        userId,
+        orgId,
+        matches: {
+          create: topMatches.map((m) => ({
+            matchedEntityId: m.id,
+            matchedName: m.matchedName,
+            similarityScore: m.score / 100,
+            matchedField: m.matchedField,
+            listSource: m.listSource,
+          })),
         },
-        include: { matches: true },
-      });
-
-      await tx.organization.update({
-        where: { id: orgId },
-        data: { queriesUsed: { increment: 1 } },
-      });
-
-      return createdQuery;
+      },
+      include: { matches: true },
     });
 
     await this.audit.log({
@@ -280,17 +267,6 @@ export class ScreeningService {
   }
 
   async bulkScreen(dto: { names: string[]; entityType?: string }, userId: string, orgId: string) {
-    const org = await this.prisma.organization.findUniqueOrThrow({
-      where: { id: orgId },
-    });
-
-    const isEnterprise = process.env.APP_MODE === 'enterprise';
-    const isUnlimited = isEnterprise || org.isUnlimited || org.queriesLimit === -1;
-
-    if (!isUnlimited && org.plan !== 'BUSINESS' && org.plan !== 'ENTERPRISE') {
-      throw new ForbiddenException('Bulk screening is a Business/Enterprise plan feature.');
-    }
-
     const batchId = randomUUID();
     const jobs = dto.names.map((name) => ({
       name: 'screen-single-name',
@@ -307,7 +283,7 @@ export class ScreeningService {
     });
 
     return {
-      message: 'Tarama işlemi kuyruğa alındı. Arka planda işleniyor.',
+      message: 'Bulk screening queued. Processing in background.',
       batchId,
       totalQueued: dto.names.length,
       estimatedMinutes: Math.ceil(dto.names.length / 30),

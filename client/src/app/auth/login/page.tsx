@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, Suspense } from "react";
+import { useState, Suspense, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ShieldAlert, Loader2, ArrowRight, Lock } from "lucide-react";
@@ -9,9 +9,15 @@ import { useAuthStore } from "@/lib/store";
 
 function LoginForm() {
   const router = useRouter();
-  const setAuth = useAuthStore((s) => s.setAuth);
+  const { setAuth, token, isHydrated, user } = useAuthStore();
   const [form, setForm] = useState({ email: "", password: "" });
   const [status, setStatus] = useState({ loading: false, error: "" });
+
+  useEffect(() => {
+    if (isHydrated && token && user) {
+      router.replace("/dashboard");
+    }
+  }, [isHydrated, token, user, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -20,11 +26,14 @@ function LoginForm() {
     try {
       const res = await auth.login(form);
       setAuth(res.user, res.token);
-      router.push("/dashboard");
+      router.replace("/dashboard");
     } catch (err) {
-      setStatus({ 
-        loading: false, 
-        error: err instanceof ApiError ? err.message : "Authentication failed. Please check your credentials." 
+      setStatus({
+        loading: false,
+        error:
+          err instanceof ApiError
+            ? err.message
+            : "Authentication failed. Please check your credentials.",
       });
     }
   };
@@ -53,7 +62,9 @@ function LoginForm() {
 
       <form onSubmit={handleSubmit} className="space-y-5">
         <div className="space-y-2">
-          <label className="block text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Work Email</label>
+          <label className="block text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">
+            Work Email
+          </label>
           <input
             type="email"
             autoComplete="email"
@@ -65,7 +76,9 @@ function LoginForm() {
           />
         </div>
         <div className="space-y-2">
-          <label className="block text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Password</label>
+          <label className="block text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">
+            Password
+          </label>
           <input
             type="password"
             autoComplete="current-password"
@@ -85,7 +98,9 @@ function LoginForm() {
           {status.loading ? (
             <Loader2 className="w-4 h-4 animate-spin" />
           ) : (
-            <>Sign In <ArrowRight className="w-4 h-4" /></>
+            <>
+              Sign In <ArrowRight className="w-4 h-4" />
+            </>
           )}
         </button>
       </form>
@@ -94,11 +109,17 @@ function LoginForm() {
       <div className="mt-10 flex flex-col gap-4 text-center text-xs font-bold text-muted-foreground">
         <div className="pt-6 border-t border-border">
           New to the platform?{" "}
-          <Link href="/auth/register" className="text-primary hover:underline underline-offset-4">
+          <Link
+            href="/auth/register"
+            className="text-primary hover:underline underline-offset-4"
+          >
             Create an Account
           </Link>
         </div>
-        <Link href="/support" className="hover:text-foreground transition-colors opacity-60">
+        <Link
+          href="/support"
+          className="hover:text-foreground transition-colors opacity-60"
+        >
           Contact Security Support
         </Link>
       </div>
@@ -109,7 +130,9 @@ function LoginForm() {
 export default function LoginPage() {
   return (
     <div className="min-h-screen bg-background flex items-center justify-center px-4 font-sans selection:bg-primary/30">
-      <Suspense fallback={<Loader2 className="w-8 h-8 animate-spin text-primary" />}>
+      <Suspense
+        fallback={<Loader2 className="w-8 h-8 animate-spin text-primary" />}
+      >
         <LoginForm />
       </Suspense>
     </div>

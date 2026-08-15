@@ -16,7 +16,7 @@ export class SettingsController {
   constructor(private readonly settingsService: SettingsService) {}
 
   @Get('config')
-  @Roles(Role.ADMIN)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({ summary: 'Organizasyon ayarlarını getir' })
   @ApiResponse({ status: 200, description: 'Ayarlar başarıyla getirildi.' })
   async getConfig(@GetUser('orgId') orgId: string) {
@@ -24,7 +24,7 @@ export class SettingsController {
   }
 
   @Patch('config')
-  @Roles(Role.ADMIN)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({ summary: 'Organizasyon ayarlarını güncelle' })
   @ApiResponse({ status: 200, description: 'Ayarlar güncellendi.' })
   async updateConfig(

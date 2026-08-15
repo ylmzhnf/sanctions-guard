@@ -1,57 +1,41 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { 
-  Building2, Users as UsersIcon, Activity, Search, 
-  ShieldCheck, AlertTriangle, Loader2, RefreshCw, 
-  ChevronLeft, ChevronRight, Globe, Zap, Server, Shield
+  Building2, Users as UsersIcon, Search, 
+  ChevronLeft, ChevronRight, Server
 } from "lucide-react";
 
-import api, { ApiError } from "@/lib/api";
+import api from "@/lib/api";
 import { useAuthStore } from "@/lib/store";
-import { useFeatureFlags } from "@/hooks/useFeatureFlags";
-import { cn, PLAN_LABELS } from "@/lib/utils";
+import { cn } from "@/lib/utils";
+import { isSuperAdmin } from "@/lib/auth-utils";
+import { SuperAdminGuard, AccessDenied } from "@/components/RoleGuard";
 
 export default function GlobalAdminDashboard() {
   const { user } = useAuthStore();
-  const queryClient = useQueryClient();
-  const { isEnterprise, isSaas } = useFeatureFlags();
   const [page, setPage] = useState(1);
 
-  const isSuperAdmin = user?.role === "SUPER_ADMIN" || user?.role === "ADMIN";
+  const userIsSuperAdmin = isSuperAdmin(user);
 
   const { data: stats, isLoading: statsLoading } = useQuery({
     queryKey: ["global-stats"],
     queryFn: () => api.get("/admin/stats").then(r => r.data),
-    enabled: isSuperAdmin,
+    enabled: userIsSuperAdmin,
   });
 
   const { data: orgData, isLoading: orgsLoading } = useQuery({
     queryKey: ["global-orgs", page],
     queryFn: () => api.get(`/admin/organizations?page=${page}&limit=10`).then(r => r.data),
-    enabled: isSuperAdmin,
+    enabled: userIsSuperAdmin,
   });
 
-  const updateLicenseMutation = useMutation({
-    mutationFn: async ({ orgId, data }: { orgId: string; data: any }) => {
-      return api.patch(`/admin/organizations/${orgId}/license`, data);
-    },
-    onSuccess: () => {
-     
-      queryClient.invalidateQueries({ queryKey: ["global-orgs"] });
-      queryClient.invalidateQueries({ queryKey: ["global-stats"] });
-      queryClient.invalidateQueries({ queryKey: ["current-user"] });
-    },
-    onError: (err: any) => {
-      console.error(err instanceof ApiError ? err.message : "License update failed");
-    }
-  });
-
-  if (!isSuperAdmin) return <AccessDeniedState />;
+  if (!userIsSuperAdmin) return <AccessDenied requiredRole="SUPER_ADMIN" />;
 
   return (
-    <div className="max-w-[1400px] mx-auto space-y-10 animate-in fade-in duration-1000 pb-20 relative font-sans">
+    <SuperAdminGuard>
+      <div className="max-w-[1400px] mx-auto space-y-10 animate-in fade-in duration-1000 pb-20 relative font-sans">
       
       {/* Background Decorators */}
       <div className="absolute top-0 right-0 w-[600px] h-[400px] bg-primary/5 blur-[120px] rounded-full pointer-events-none" />
@@ -61,16 +45,13 @@ export default function GlobalAdminDashboard() {
       <header className="flex flex-col md:flex-row md:items-end justify-between gap-6 relative z-10">
         <div>
           <div className="flex items-center gap-2 text-primary font-black uppercase text-[10px] tracking-[0.3em] mb-3">
-            {isSaas ? <Globe className="w-4 h-4" /> : <Server className="w-4 h-4" />} 
-            {isSaas ? "Global Cloud Infrastructure" : "Private Enterprise Node"}
+            <Server className="w-4 h-4" /> SanctionsGuard MVP Core
           </div>
           <h1 className="text-4xl md:text-5xl font-black tracking-tighter">
             System <span className="bg-clip-text text-transparent bg-gradient-to-r from-primary to-blue-500">Overseer</span>
           </h1>
           <p className="text-muted-foreground text-sm font-medium mt-2 max-w-lg leading-relaxed">
-            {isSaas 
-              ? "Monitor multi-tenant resource allocations, user activities, and adjust compliance quotas across the public cloud."
-              : "Manage internal departments, system health, and unlimited compliance operations within your secure private network."}
+            Monitor organizations, user accounts, and overall system activity.
           </p>
         </div>
         <div className="bg-card/60 backdrop-blur-xl border border-border/50 p-5 rounded-3xl flex items-center gap-5 shadow-xl hover:shadow-primary/5 transition-all">
@@ -85,17 +66,17 @@ export default function GlobalAdminDashboard() {
       </header>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 lg:gap-8 relative z-10">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 lg:gap-8 relative z-10">
         <StatTile 
           icon={<Building2 className="w-6 h-6 text-indigo-500" />} 
-          label={isSaas ? "Active Tenants" : "Departments"} 
+          label="Organizations" 
           value={stats?.totalOrganizations} 
           loading={statsLoading} 
           colorClass="from-indigo-500/20 to-indigo-500/5 border-indigo-500/20"
         />
         <StatTile 
           icon={<UsersIcon className="w-6 h-6 text-blue-500" />} 
-          label="Global Users" 
+          label="Total Users" 
           value={stats?.totalUsers} 
           loading={statsLoading} 
           colorClass="from-blue-500/20 to-blue-500/5 border-blue-500/20"
@@ -107,16 +88,9 @@ export default function GlobalAdminDashboard() {
           loading={statsLoading} 
           colorClass="from-primary/20 to-primary/5 border-primary/20"
         />
-        <StatTile 
-          icon={<Activity className="w-6 h-6 text-emerald-500" />} 
-          label="System Load" 
-          value={stats?.totalSystemUsage} 
-          loading={statsLoading} 
-          colorClass="from-emerald-500/20 to-emerald-500/5 border-emerald-500/20"
-        />
       </div>
 
-      {/* Tenants Table */}
+      {/* Organizations Table */}
       <section className="bg-card/60 backdrop-blur-xl border border-border/50 rounded-[2.5rem] overflow-hidden shadow-2xl relative z-10">
         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-primary via-blue-500 to-transparent" />
         <div className="px-10 py-8 border-b border-border/50 bg-muted/10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -125,8 +99,8 @@ export default function GlobalAdminDashboard() {
               <DatabaseIcon className="w-5 h-5 text-primary" />
             </div>
             <div>
-              <h3 className="font-black text-foreground uppercase text-sm tracking-[0.2em]">{isSaas ? "Tenant Directory" : "Department Management"}</h3>
-              <p className="text-[10px] text-muted-foreground font-bold tracking-widest uppercase mt-1">Resource & License Control</p>
+              <h3 className="font-black text-foreground uppercase text-sm tracking-[0.2em]">Organizations Directory</h3>
+              <p className="text-[10px] text-muted-foreground font-bold tracking-widest uppercase mt-1 font-mono">System Tenants</p>
             </div>
           </div>
           <div className="flex items-center gap-3 bg-background border border-border/50 p-1.5 rounded-xl">
@@ -140,11 +114,10 @@ export default function GlobalAdminDashboard() {
           <table className="w-full text-left border-separate border-spacing-y-2 px-2">
             <thead>
               <tr className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/60">
-                <th className="px-6 py-4">{isSaas ? "Organization & Identity" : "Department"}</th>
-                <th className="px-6 py-4">Plan Level</th>
-                <th className="px-6 py-4 text-center">Monthly Limit</th>
-                <th className="px-6 py-4 text-center">Enterprise Mode</th>
-                <th className="px-6 py-4 text-right">Operations</th>
+                <th className="px-6 py-4">Organization Name</th>
+                <th className="px-6 py-4 text-center">Users</th>
+                <th className="px-6 py-4 text-center">Queries</th>
+                <th className="px-6 py-4 text-right font-mono">ID</th>
               </tr>
             </thead>
             <tbody>
@@ -154,47 +127,15 @@ export default function GlobalAdminDashboard() {
                 <tr key={org.id} className="bg-background/40 hover:bg-muted/50 transition-all group shadow-sm hover:shadow-md rounded-2xl">
                   <td className="px-6 py-5 rounded-l-2xl">
                     <div className="font-bold text-sm text-foreground group-hover:text-primary transition-colors">{org.name}</div>
-                    <div className="text-[10px] font-bold text-muted-foreground mt-1 uppercase tracking-[0.1em]">ID: {org.id.slice(0,12)}...</div>
                   </td>
-                  <td className="px-6 py-5">
-                    <select
-                      className="bg-card border border-border/50 shadow-sm rounded-xl px-4 py-2.5 text-[10px] font-black uppercase tracking-widest outline-none focus:border-primary transition-all cursor-pointer appearance-none"
-                      value={org.plan}
-                      onChange={(e) => updateLicenseMutation.mutate({ orgId: org.id, data: { plan: e.target.value } })}
-                    >
-                      {Object.keys(PLAN_LABELS).map(p => <option key={p} value={p}>{p}</option>)}
-                    </select>
+                  <td className="px-6 py-5 text-center font-bold text-sm">
+                    {org._count?.users || 0}
                   </td>
-                  <td className="px-6 py-5 text-center">
-                    <input
-                      type="number"
-                      className="w-28 bg-card border border-border/50 shadow-sm rounded-xl px-4 py-2.5 text-xs font-mono font-black text-center outline-none focus:border-primary transition-all disabled:opacity-30"
-                      defaultValue={org.queriesLimit}
-                      disabled={org.isUnlimited || org.queriesLimit === -1}
-                      onBlur={(e) => updateLicenseMutation.mutate({ orgId: org.id, data: { queriesLimit: parseInt(e.target.value) } })}
-                    />
+                  <td className="px-6 py-5 text-center font-bold text-sm">
+                    {org._count?.queries || 0}
                   </td>
-                  <td className="px-6 py-5 text-center">
-                    <div className="flex justify-center">
-                      <label className="relative inline-flex items-center cursor-pointer">
-                        <input 
-                          type="checkbox" 
-                          className="sr-only peer"
-                          checked={org.isUnlimited || org.queriesLimit === -1}
-                          onChange={(e) => updateLicenseMutation.mutate({ orgId: org.id, data: { isUnlimited: e.target.checked } })}
-                        />
-                        <div className="w-11 h-6 bg-muted peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
-                      </label>
-                    </div>
-                  </td>
-                  <td className="px-6 py-5 text-right rounded-r-2xl">
-                    <button 
-                      onClick={() => updateLicenseMutation.mutate({ orgId: org.id, data: { queriesUsed: 0 } })}
-                      disabled={updateLicenseMutation.isPending}
-                      className="inline-flex items-center gap-2 text-[10px] font-black uppercase bg-secondary text-secondary-foreground px-5 py-2.5 rounded-xl border border-border/50 hover:bg-muted hover:shadow-md transition-all disabled:opacity-50"
-                    >
-                      <RefreshCw className={cn("w-3 h-3", updateLicenseMutation.isPending && "animate-spin")} /> Reset Usage
-                    </button>
+                  <td className="px-6 py-5 text-right rounded-r-2xl font-mono text-xs text-muted-foreground">
+                    {org.id}
                   </td>
                 </tr>
               ))}
@@ -202,11 +143,10 @@ export default function GlobalAdminDashboard() {
           </table>
         </div>
       </section>
-    </div>
+      </div>
+    </SuperAdminGuard>
   );
 }
-
-// --- Sub Components ---
 
 function StatTile({ icon, label, value, loading, colorClass }: any) {
   return (
@@ -227,27 +167,10 @@ function StatTile({ icon, label, value, loading, colorClass }: any) {
   );
 }
 
-function AccessDeniedState() {
-  return (
-    <div className="min-h-[70vh] flex flex-col items-center justify-center text-center p-12">
-      <div className="relative mb-8">
-        <div className="absolute inset-0 bg-destructive/20 blur-3xl rounded-full" />
-        <div className="w-24 h-24 bg-card border border-destructive/30 rounded-3xl flex items-center justify-center relative z-10 shadow-2xl">
-          <Shield className="w-10 h-10 text-destructive" />
-        </div>
-      </div>
-      <h2 className="text-4xl font-black tracking-tighter italic">Access <span className="text-destructive not-italic">Restricted</span></h2>
-      <p className="text-muted-foreground text-sm mt-3 max-w-sm font-medium leading-relaxed">
-        This command center is secured. Only users with the <span className="font-bold text-foreground">SUPER_ADMIN</span> clearance can access global infrastructure settings.
-      </p>
-    </div>
-  );
-}
-
 function LoadingTableRows() {
   return Array.from({ length: 5 }).map((_, i) => (
     <tr key={i} className="animate-pulse bg-background/20">
-      <td colSpan={5} className="px-6 py-6 rounded-2xl"><div className="h-12 bg-muted/50 rounded-xl w-full" /></td>
+      <td colSpan={4} className="px-6 py-6 rounded-2xl"><div className="h-12 bg-muted/50 rounded-xl w-full" /></td>
     </tr>
   ));
 }

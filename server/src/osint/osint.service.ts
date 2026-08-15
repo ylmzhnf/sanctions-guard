@@ -11,14 +11,11 @@ export interface OsintResult {
 @Injectable()
 export class OsintService {
   private readonly logger = new Logger(OsintService.name);
-  private readonly APP_MODE: string;
 
   constructor(
     private readonly configService: ConfigService,
     private readonly redis: RedisService,
-  ) {
-    this.APP_MODE = this.configService.get<string>('APP_MODE') || 'saas';
-  }
+  ) {}
 
   async fetchResults(
     name: string,
@@ -26,15 +23,12 @@ export class OsintService {
     threshold: number = 0.7,
     osintApiKey?: string,
   ): Promise<OsintResult> {
-    
     if (score < threshold) {
       return { news: [], social: [] };
     }
 
     const apiKey = osintApiKey || this.configService.get<string>('SERPAPI_KEY');
     
-    // MİMARİYİ TEST EDEBİLMEN İÇİN MOCK (TEST) MODU
-    // Eğer API key yoksa veya geçersizse (test yazdıysan), sahte veri dönerek süreci devam ettirir.
     if (!apiKey || apiKey === 'test' || apiKey.trim() === '') {
       this.logger.warn(`SerpApi Key missing or set to test. Using MOCK OSINT data for: ${name}`);
       return this.getMockData(name);
@@ -51,7 +45,7 @@ export class OsintService {
     }
 
     try {
-      this.logger.log(`Starting deep OSINT search for: ${name} (Mode: ${this.APP_MODE})`);
+      this.logger.log(`Starting deep OSINT search for: ${name}`);
 
       const [newsResults, socialResults] = await Promise.allSettled([
         this.searchNews(name, apiKey),
@@ -70,26 +64,18 @@ export class OsintService {
       return finalResult;
     } catch (err: any) {
       this.logger.error(`Global OSINT failure for ${name}: ${err.message}`);
-      return this.getMockData(name); // Çökerse yine mock data dön
+      return this.getMockData(name);
     }
   }
 
-  /**
-   * ÇÖKMEYİ ENGELLEYEN YENİ YAPI
-   * Kütüphanenin gizli Promise'ini await ile yakalayıp catch bloğunda eziyoruz.
-   */
   private async runSearch(params: any): Promise<any> {
     try {
-      // Callback YERİNE doğrudan await kullanıyoruz, böylece unhandled rejection oluşmaz
       const response = await getJson(params);
-      
-      // Bazen hata 200 OK içinde JSON objesi olarak gelir
       if (response?.error) {
         throw new Error(`SerpApi Error: ${response.error}`);
       }
       return response;
     } catch (err: any) {
-      // JSON stringify edilmiş hataları (senin aldığın hata gibi) güvenlice yakalarız
       const errorMessage = typeof err === 'string' ? err : err.message || JSON.stringify(err);
       throw new Error(errorMessage);
     }
@@ -101,7 +87,7 @@ export class OsintService {
         engine: 'google_news',
         q: query,
         api_key: apiKey,
-        gl: 'us', 
+        gl: 'us',
       });
 
       return (response?.news_results || []).slice(0, 5).map((item: any) => ({
@@ -112,7 +98,7 @@ export class OsintService {
       }));
     } catch (err: any) {
       this.logger.warn(`News search failed (Falling back to empty/mock): ${err.message}`);
-      throw err; // Üstteki Promise.allSettled yakalayacak
+      throw err;
     }
   }
 
@@ -124,7 +110,7 @@ export class OsintService {
         engine: 'google',
         q: socialQuery,
         api_key: apiKey,
-        num: 10, 
+        num: 10,
       });
 
       return (response?.organic_results || []).slice(0, 5).map((item: any) => ({
@@ -148,9 +134,6 @@ export class OsintService {
     return 'Web Source';
   }
 
-  /**
-   * Mimarinin çalıştığını kanıtlayan test verisi üretici
-   */
   private getMockData(name: string): OsintResult {
     return {
       news: [
