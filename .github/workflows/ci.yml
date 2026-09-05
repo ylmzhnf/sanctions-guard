@@ -49,23 +49,34 @@ jobs:
         with:
           version: 9
 
-      - name: Install dependencies
+      - name: Install Frontend Dependencies
+        working-directory: ./client
         run: pnpm install --frozen-lockfile
 
       - name: Lint frontend
-        run: pnpm --filter client run lint
+        working-directory: ./client
+        run: pnpm run lint
 
       - name: Type-check frontend
-        run: pnpm --filter client exec tsc --noEmit
-      
+        working-directory: ./client
+        run: pnpm exec tsc --noEmit
+
       - name: Build frontend (Production Check)
-        run: pnpm --filter client run build
+        working-directory: ./client
+        run: pnpm run build
+
+      - name: Install Backend Dependencies
+        working-directory: ./server
+        run: pnpm install --frozen-lockfile
 
       - name: Validate Prisma Schema
-        run: pnpm --filter server exec prisma validate
+        working-directory: ./server
+        run: pnpm exec prisma validate
 
       - name: Build backend
-        run: pnpm --filter server run build
+        working-directory: ./server
+        run: pnpm run build
 
       - name: Run Backend Unit Tests
-        run: pnpm --filter server run test
+        working-directory: ./server
+        run: pnpm run test
