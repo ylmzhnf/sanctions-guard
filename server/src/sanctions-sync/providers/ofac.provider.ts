@@ -6,6 +6,8 @@ import { ParsedEntity } from '../interfaces/sync-provider.interface';
 
 const OFAC_SDN_URL = 'https://www.treasury.gov/ofac/downloads/sdn.xml';
 
+const MIN_EXPECTED_ENTITIES = 5000;
+
 @Injectable()
 export class OfacProvider extends BaseSyncProvider {
   readonly sourceName = ListSource.OFAC;
@@ -15,7 +17,7 @@ export class OfacProvider extends BaseSyncProvider {
 
     try {
       const xmlData = await this.fetchXmlWithRetry(OFAC_SDN_URL);
-      
+
       if (!xmlData || xmlData.trim().length === 0) {
         throw new Error('Empty XML response received from OFAC');
       }
@@ -43,6 +45,9 @@ export class OfacProvider extends BaseSyncProvider {
       this.logger.log(
         `Successfully parsed ${entities.length} entities from OFAC`,
       );
+
+      this.assertMinimumEntityCount(entities, MIN_EXPECTED_ENTITIES, 'OFAC');
+
       return entities;
     } catch (error: any) {
       this.logger.error(`OFAC fetch and parse failed: ${error.message}`);
@@ -52,7 +57,7 @@ export class OfacProvider extends BaseSyncProvider {
 
   private parseXml(jsonData: any): ParsedEntity[] {
     const entities: ParsedEntity[] = [];
-    
+
     try {
       if (!jsonData?.sdnList) {
         this.logger.warn('No sdnList found in parsed JSON data');
@@ -60,7 +65,7 @@ export class OfacProvider extends BaseSyncProvider {
       }
 
       const sdnList = this.toArray(jsonData.sdnList.sdnEntry);
-      
+
       if (sdnList.length === 0) {
         this.logger.warn('No sdnEntry found in sdnList');
         return entities;
@@ -81,13 +86,20 @@ export class OfacProvider extends BaseSyncProvider {
               .join(' ')
               .trim() ||
             entry.sdnName ||
-            'Unknown';
+            '';
+
+          if (!name) {
+            this.logger.warn(
+              `Skipping OFAC entry ${entry.uid}: no usable name found`,
+            );
+            continue;
+          }
 
           const entityType =
             entry.sdnType === 'Individual' ? 'INDIVIDUAL' : 'ENTITY';
-          
+
           const programs = this.toArray(entry.programList?.program)
-            .map(p => typeof p === 'string' ? p : String(p))
+            .map((p) => (typeof p === 'string' ? p : String(p)))
             .filter(Boolean);
 
           const aliases = this.toArray(entry.akaList?.aka)
@@ -116,12 +128,16 @@ export class OfacProvider extends BaseSyncProvider {
             remarks: entry.remarks || null,
           });
         } catch (entryError: any) {
-          this.logger.warn(`Failed to process entry ${entry?.uid}: ${entryError.message}`);
+          this.logger.warn(
+            `Failed to process entry ${entry?.uid}: ${entryError.message}`,
+          );
           continue;
         }
       }
 
-      this.logger.log(`Successfully processed ${entities.length} valid entities`);
+      this.logger.log(
+        `Successfully processed ${entities.length} valid entities`,
+      );
     } catch (error: any) {
       this.logger.error(`XML parsing error: ${error.message}`);
       throw new Error(`Failed to parse OFAC XML structure: ${error.message}`);

@@ -4,21 +4,17 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-  /* Professional Fonts - Inter & Fira Code (from next/font) */
   --font-sans: var(--font-inter);
   --font-mono: var(--font-fira-code);
 
-  /* Temel Renkler */
   --color-background: var(--background);
   --color-foreground: var(--foreground);
 
-  /* Marka Renkleri (SaaS ve Enterprise için ortak) */
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
 
-  /* UI Elemanları */
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
   --color-popover: var(--popover);
@@ -28,21 +24,18 @@
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
 
-  /* Durum Renkleri */
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
 
-  /* Veri Görselleştirme (Risk Grafikleri vb.) */
   --color-chart-1: var(--chart-1);
   --color-chart-2: var(--chart-2);
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
 
-  /* Sidebar - Kurumsal Dashboard yapısı için */
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
@@ -52,7 +45,6 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
 
-  /* Radius Sistemi - Enterprise için daha keskin (sm/md), SaaS için daha yuvarlak (lg) */
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);
   --radius-sm: calc(var(--radius) - 4px);
@@ -62,10 +54,8 @@
 
 @layer base {
   :root {
-    /* Base */
     --radius: 0.6rem;
 
-    /* Light Mode — Slate / Trust Blue */
     --background: #f8fafc;
     --foreground: #0f172a;
 

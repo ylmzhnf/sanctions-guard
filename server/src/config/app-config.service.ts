@@ -11,9 +11,6 @@ export class AppConfigService implements OnModuleInit {
     this.printStartupBanner();
   }
 
-  /**
-   * Read any environment variable with an optional default.
-   */
   getEnv<T = string>(key: string, defaultValue?: T): T {
     return this.configService.get<T>(key, defaultValue as any) as T;
   }
@@ -21,7 +18,7 @@ export class AppConfigService implements OnModuleInit {
   private printStartupBanner() {
     const divider = '══════════════════════════════════════════';
     this.logger.log(`╔${divider}╗`);
-    this.logger.log(`║ 🚀 SANCTIONS-GUARD MVP                   ║`);
+    this.logger.log(`║  SANCTIONS-GUARD MVP                   ║`);
     this.logger.log(`╟${divider}╢`);
     this.logger.log(`║ > All features unlocked                  ║`);
     this.logger.log(`║ > Screening + AI + Audit                 ║`);

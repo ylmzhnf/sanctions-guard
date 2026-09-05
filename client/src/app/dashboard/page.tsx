@@ -69,12 +69,12 @@ export default function DashboardHomePage() {
           </h1>
           <p className="text-muted-foreground text-sm mt-2 flex items-center gap-2">
             <Activity className="w-4 h-4 text-primary shrink-0" />
-            Compliance screening is active.
+            All systems online
           </p>
         </div>
         <div className="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-medium rounded-md border border-emerald-200 bg-emerald-50 text-emerald-700">
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-          System operational
+          Real-time monitoring
         </div>
       </div>
 
@@ -97,7 +97,7 @@ export default function DashboardHomePage() {
         <StatCard
           icon={<Database className="w-5 h-5 text-emerald-600" />}
           label="Screening engine"
-          value="Operational"
+          value="Synchronized"
           isLoading={false}
           colorClass="bg-emerald-50 border-emerald-100 text-emerald-600"
           valueClass="text-lg md:text-xl text-emerald-700"

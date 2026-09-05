@@ -1,7 +1,16 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { ConfigService } from '@nestjs/config';
+import axios from 'axios';
 import { OsintService } from './osint.service';
+import { RedisService } from '../common/redis/redis.service';
 
-global.fetch = jest.fn();
+jest.mock('axios');
+
+const mockedAxios = axios as jest.MockedFunction<typeof axios>;
+const mockRedis = {
+  get: jest.fn().mockResolvedValue(null),
+  set: jest.fn().mockResolvedValue('OK'),
+};
 
 describe('OsintService', () => {
   let service: OsintService;
@@ -12,7 +21,14 @@ describe('OsintService', () => {
     jest.clearAllMocks();
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [OsintService],
+      providers: [
+        OsintService,
+        {
+          provide: ConfigService,
+          useValue: { get: jest.fn((key: string) => process.env[key]) },
+        },
+        { provide: RedisService, useValue: mockRedis },
+      ],
     }).compile();
 
     service = module.get<OsintService>(OsintService);
@@ -23,10 +39,9 @@ describe('OsintService', () => {
   });
 
   it('should return results when API calls succeed', async () => {
-    (global.fetch as jest.Mock)
+    mockedAxios
       .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
+        data: {
           news: [
             {
               title: 'News 1',
@@ -35,35 +50,35 @@ describe('OsintService', () => {
               date: 'today',
             },
           ],
-        }),
+        },
       })
       .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          organic: [
-            {
-              title: 'Social 1',
-              link: 'https://twitter.com/user',
-              snippet: '...',
-            },
-          ],
-        }),
+        data: {
+          organic: [{ title: 'Social 1', link: 'https://twitter.com/user' }],
+        },
       });
 
-    const result = await service.fetchResults('John Doe');
+    const result = await service.fetchResults(
+      'John Doe',
+      0.9,
+      0.7,
+      'test_key_123',
+    );
 
     expect(result.news).toHaveLength(1);
     expect(result.social).toHaveLength(1);
-    expect(result.social[0].platform).toBe('Twitter/X');
+    expect(result.social[0].platform).toBe('X / Twitter');
   });
 
   it('should handle API failure gracefully (HTTP 500) and return empty arrays', async () => {
-    (global.fetch as jest.Mock).mockResolvedValue({
-      ok: false,
-      status: 500,
-    });
+    mockedAxios.mockRejectedValue(new Error('HTTP 500'));
 
-    const result = await service.fetchResults('Jane Doe');
+    const result = await service.fetchResults(
+      'Jane Doe',
+      0.9,
+      0.7,
+      'test_key_123',
+    );
 
     expect(result.news).toEqual([]);
     expect(result.social).toEqual([]);
@@ -73,14 +88,21 @@ describe('OsintService', () => {
     delete process.env.SERPER_API_KEY;
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [OsintService],
+      providers: [
+        OsintService,
+        {
+          provide: ConfigService,
+          useValue: { get: jest.fn((key: string) => process.env[key]) },
+        },
+        { provide: RedisService, useValue: mockRedis },
+      ],
     }).compile();
     const serviceNoKey = module.get<OsintService>(OsintService);
 
-    const result = await serviceNoKey.fetchResults('John Doe');
+    const result = await serviceNoKey.fetchResults('John Doe', 0.9, 0.7);
 
     expect(result.news).toEqual([]);
     expect(result.social).toEqual([]);
-    expect(global.fetch).not.toHaveBeenCalled();
+    expect(mockedAxios).not.toHaveBeenCalled();
   });
 });

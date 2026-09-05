@@ -18,15 +18,16 @@ export interface ExplainInput {
   provider: AiProvider;
 }
 
-const LEGAL_FOOTER =
-  '\n\n---\n⚠️ Automated analysis — not legal advice. HIGH/CRITICAL matches require qualified compliance review.';
+
 
 const SYSTEM_PROMPT = `You are a compliance analyst specializing in international sanctions.
 Your job is to write clear, professional risk explanations for sanctions screening matches.
-Format your response as 3 sections: 
-1. Risk Summary (Executive overview)
-2. Match Analysis (Detailed comparison)
-3. Recommended Action (Next steps)
+You MUST respond ONLY with a valid JSON object in the following format:
+{
+  "summary": "Executive overview here...",
+  "analysis": "Detailed comparison here...",
+  "action": "Next steps here..."
+}
 Be factual, concise, and professional. Never make definitive legal conclusions.
 Always recommend human review for HIGH or CRITICAL matches.
 Keep the total length under 300 words.`;
@@ -42,7 +43,7 @@ export class AiExplainerService {
       this.logger.warn(
         `AI Analysis skipped: No API key found for ${input.provider}`,
       );
-      return `AI analysis is currently unavailable because no API key is configured in settings.${LEGAL_FOOTER}`;
+      return `AI analysis is currently unavailable because no API key is configured in settings.`;
     }
 
     const userPrompt = this.buildUserPrompt(input);
@@ -53,7 +54,7 @@ export class AiExplainerService {
           ? await this.requestAnthropic(apiKey, userPrompt)
           : await this.requestOpenAI(apiKey, userPrompt);
 
-      return explanation + LEGAL_FOOTER;
+      return explanation;
     } catch (err: any) {
       return this.handleAiError(err, input.provider);
     }
@@ -89,6 +90,7 @@ export class AiExplainerService {
     const openai = new OpenAI({ apiKey });
     const response = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
+      response_format: { type: 'json_object' },
       messages: [
         { role: 'system', content: SYSTEM_PROMPT },
         { role: 'user', content: prompt },
@@ -131,6 +133,6 @@ export class AiExplainerService {
       errorMsg = `🚨 AI Error: Rate limit or quota exceeded for ${provider}. Please try again later.`;
     }
 
-    return errorMsg + LEGAL_FOOTER;
+    return errorMsg;
   }
 }

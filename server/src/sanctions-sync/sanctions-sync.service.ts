@@ -6,7 +6,6 @@ import { PrismaService } from '../common/prisma/prisma.service';
 import { RedisService } from '../common/redis/redis.service';
 import { SyncProvider } from './interfaces/sync-provider.interface';
 
-
 import { OfacProvider } from './providers/ofac.provider';
 import { EuProvider } from './providers/eu.provider';
 import { UnProvider } from './providers/un.provider';
@@ -44,7 +43,7 @@ export class SanctionsSyncService implements OnModuleInit {
 
   async syncAll(force = false) {
     const lockValue = randomUUID();
-    const lockTTL = 1800; 
+    const lockTTL = 1800;
 
     try {
       if (force) await this.redis.getClient().del(this.LOCK_KEY);
@@ -59,7 +58,6 @@ export class SanctionsSyncService implements OnModuleInit {
 
       this.logger.log('Lock acquired. Starting global sync...');
 
-      
       for (const provider of this.providers) {
         await this.runProviderSync(provider);
       }
@@ -76,15 +74,14 @@ export class SanctionsSyncService implements OnModuleInit {
   private async runProviderSync(provider: SyncProvider) {
     const source = provider.sourceName;
     const startTime = new Date();
-    let stats = { added: 0, updated: 0, removed: 0 };
+    const stats = { added: 0, updated: 0, removed: 0 };
     let errorMsg: string | null = null;
 
     try {
       const entities = await provider.fetchAndParse();
       if (!entities.length) return;
 
-      
-      const BATCH_SIZE = 300; 
+      const BATCH_SIZE = 300;
       for (let i = 0; i < entities.length; i += BATCH_SIZE) {
         const batch = entities.slice(i, i + BATCH_SIZE);
 
@@ -105,10 +102,9 @@ export class SanctionsSyncService implements OnModuleInit {
             }),
           ),
         );
-        stats.added += batch.length; 
+        stats.added += batch.length;
       }
 
-      
       const deactivated = await this.prisma.sanctionedEntity.updateMany({
         where: {
           listSource: source,
@@ -131,6 +127,15 @@ export class SanctionsSyncService implements OnModuleInit {
   }
 
   private mapEntity(e: any) {
+    let formattedReason: string | null = null;
+
+    if (Array.isArray(e.remarks)) {
+      formattedReason = e.remarks.filter(Boolean).join(' \n ');
+    } else if (typeof e.remarks === 'string' && e.remarks.trim() !== '') {
+      formattedReason = e.remarks.trim();
+    } else if (e.remarks) {
+      formattedReason = String(e.remarks);
+    }
     return {
       externalId: e.externalId,
       name: e.name,
@@ -139,7 +144,7 @@ export class SanctionsSyncService implements OnModuleInit {
       listSource: e.listSource,
       country: Array.isArray(e.country) ? e.country.join(', ') : e.country,
       programs: e.programs,
-      reason: e.remarks,
+      reason: formattedReason,
     };
   }
 

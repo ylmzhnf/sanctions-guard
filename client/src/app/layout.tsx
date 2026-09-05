@@ -3,11 +3,6 @@ import { Inter, Fira_Code } from "next/font/google";
 import "./globals.css";
 import Providers from "./providers";
 
-/**
- * Professional Typography for RegTech
- * Inter: Clean, highly readable sans-serif (default for UI)
- * Fira Code: Monospace for data displays and code elements
- */
 const interSans = Inter({
   variable: "--font-inter",
   subsets: ["latin"],

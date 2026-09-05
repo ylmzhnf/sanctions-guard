@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { getJson } from 'serpapi';
+import axios from 'axios';
 import { RedisService } from '../common/redis/redis.service';
 
 export interface OsintResult {
@@ -27,11 +27,11 @@ export class OsintService {
       return { news: [], social: [] };
     }
 
-    const apiKey = osintApiKey || this.configService.get<string>('SERPAPI_KEY');
-    
-    if (!apiKey || apiKey === 'test' || apiKey.trim() === '') {
-      this.logger.warn(`SerpApi Key missing or set to test. Using MOCK OSINT data for: ${name}`);
-      return this.getMockData(name);
+    if (!osintApiKey || osintApiKey.trim() === '') {
+      this.logger.warn(
+        `OSINT API key is missing or empty. Skipping OSINT search for: ${name}`,
+      );
+      return { news: [], social: [] };
     }
 
     const safeName = name.toLowerCase().replace(/[^a-z0-9]/g, '_');
@@ -48,8 +48,8 @@ export class OsintService {
       this.logger.log(`Starting deep OSINT search for: ${name}`);
 
       const [newsResults, socialResults] = await Promise.allSettled([
-        this.searchNews(name, apiKey),
-        this.searchSocial(name, apiKey),
+        this.searchNews(name, osintApiKey),
+        this.searchSocial(name, osintApiKey),
       ]);
 
       const finalResult: OsintResult = {
@@ -58,46 +58,60 @@ export class OsintService {
       };
 
       if (finalResult.news.length > 0 || finalResult.social.length > 0) {
-        await this.redis.set(cacheKey, JSON.stringify(finalResult), 86400);
+        try {
+          await this.redis.set(cacheKey, JSON.stringify(finalResult), 86400);
+        } catch (err: any) {
+          this.logger.warn(
+            `Redis cache write failed for OSINT: ${err.message}`,
+          );
+        }
       }
 
       return finalResult;
     } catch (err: any) {
       this.logger.error(`Global OSINT failure for ${name}: ${err.message}`);
-      return this.getMockData(name);
+      return { news: [], social: [] };
     }
   }
 
-  private async runSearch(params: any): Promise<any> {
+  private async runSearch(
+    endpoint: 'search' | 'news',
+    query: string,
+    apiKey: string,
+  ) {
     try {
-      const response = await getJson(params);
-      if (response?.error) {
-        throw new Error(`SerpApi Error: ${response.error}`);
-      }
-      return response;
+      const response = await axios({
+        method: 'post',
+        url: `https://google.serper.dev/${endpoint}`,
+        headers: {
+          'X-API-KEY': apiKey,
+          'Content-Type': 'application/json',
+        },
+        data: JSON.stringify({ q: query, gl: 'us' }),
+      });
+
+      return response.data;
     } catch (err: any) {
-      const errorMessage = typeof err === 'string' ? err : err.message || JSON.stringify(err);
-      throw new Error(errorMessage);
+      const errorMessage =
+        err.response?.data?.message || err.message || 'Serper API Error';
+      throw new Error(`Serper Error: ${errorMessage}`);
     }
   }
 
   private async searchNews(query: string, apiKey: string) {
     try {
-      const response = await this.runSearch({
-        engine: 'google_news',
-        q: query,
-        api_key: apiKey,
-        gl: 'us',
-      });
+      const response = await this.runSearch('news', query, apiKey);
 
-      return (response?.news_results || []).slice(0, 5).map((item: any) => ({
+      return (response.news || []).slice(0, 5).map((item: any) => ({
         title: item.title,
         link: item.link,
-        source: item.source?.name || 'Unknown',
+        source: item.source || 'Unknown',
         date: item.date || 'Recent',
       }));
     } catch (err: any) {
-      this.logger.warn(`News search failed (Falling back to empty/mock): ${err.message}`);
+      this.logger.warn(
+        `News search failed (Falling back to empty): ${err.message}`,
+      );
       throw err;
     }
   }
@@ -106,20 +120,17 @@ export class OsintService {
     try {
       const socialQuery = `"${query}" (site:twitter.com OR site:x.com OR site:linkedin.com OR site:facebook.com OR site:instagram.com)`;
 
-      const response = await this.runSearch({
-        engine: 'google',
-        q: socialQuery,
-        api_key: apiKey,
-        num: 10,
-      });
+      const response = await this.runSearch('search', socialQuery, apiKey);
 
-      return (response?.organic_results || []).slice(0, 5).map((item: any) => ({
+      return (response.organic || []).slice(0, 5).map((item: any) => ({
         title: item.title,
         link: item.link,
         platform: this.identifyPlatform(item.link),
       }));
     } catch (err: any) {
-      this.logger.warn(`Social search failed (Falling back to empty/mock): ${err.message}`);
+      this.logger.warn(
+        `Social search failed (Falling back to empty): ${err.message}`,
+      );
       throw err;
     }
   }
@@ -127,41 +138,11 @@ export class OsintService {
   private identifyPlatform(url: string): string {
     const lowerUrl = url.toLowerCase();
     if (lowerUrl.includes('linkedin.com')) return 'LinkedIn';
-    if (lowerUrl.includes('twitter.com') || lowerUrl.includes('x.com')) return 'X / Twitter';
+    if (lowerUrl.includes('twitter.com') || lowerUrl.includes('x.com'))
+      return 'X / Twitter';
     if (lowerUrl.includes('facebook.com')) return 'Facebook';
     if (lowerUrl.includes('instagram.com')) return 'Instagram';
     if (lowerUrl.includes('youtube.com')) return 'YouTube';
     return 'Web Source';
-  }
-
-  private getMockData(name: string): OsintResult {
-    return {
-      news: [
-        {
-          title: `[TEST DATA] Global sanctions review mentions ${name}`,
-          link: 'https://example.com/news/1',
-          source: 'Compliance Weekly',
-          date: new Date().toLocaleDateString(),
-        },
-        {
-          title: `[TEST DATA] Regulatory shifts impacting ${name} operations`,
-          link: 'https://example.com/news/2',
-          source: 'RegTech Insider',
-          date: '2 days ago',
-        }
-      ],
-      social: [
-        {
-          title: `[TEST DATA] LinkedIn Profile for ${name}`,
-          link: 'https://linkedin.com/in/sample',
-          platform: 'LinkedIn',
-        },
-        {
-          title: `[TEST DATA] Corporate updates regarding ${name}`,
-          link: 'https://x.com/sample',
-          platform: 'X / Twitter',
-        }
-      ]
-    };
   }
 }

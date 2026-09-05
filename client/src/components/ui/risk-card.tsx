@@ -2,22 +2,6 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 import { AlertCircle, CheckCircle2, Info, AlertTriangle } from "lucide-react";
 
-/**
- * Risk Card Component — RegTech Professional Display
- *
- * Purpose:
- * - Professional presentation of compliance screening results
- * - Risk level indicators with semantic color coding
- * - Accessibility-first design (WCAG AA+)
- *
- * Features:
- * - Icon-based visual hierarchy (matches risk level)
- * - Subtle animations and transitions
- * - Dark mode support
- * - Semantic HTML for screen readers
- * - Professional typography and spacing
- */
-
 export type RiskLevel = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "CLEAR";
 
 interface RiskConfig {
@@ -114,9 +98,7 @@ export function RiskCard({
       role="region"
       aria-label={`${config.label}: ${title}`}
     >
-      {/* Header */}
       <div className="flex items-start gap-4">
-        {/* Left accent line */}
         <div
           className={cn(
             "w-1 rounded-full shrink-0 h-full min-h-12",
@@ -125,7 +107,6 @@ export function RiskCard({
           aria-hidden="true"
         />
 
-        {/* Icon and content */}
         <div className="flex-1">
           <div className="flex items-center gap-3 mb-2">
             <span className={cn("text-lg", config.textColor)}>
@@ -156,7 +137,6 @@ export function RiskCard({
             </p>
           )}
 
-          {/* Details Grid */}
           {details && details.length > 0 && (
             <div
               className={cn(
@@ -177,7 +157,6 @@ export function RiskCard({
         </div>
       </div>
 
-      {/* Children (custom content) */}
       {children && (
         <div className="mt-6 pt-6 border-t border-current opacity-50">
           {children}
@@ -186,11 +165,6 @@ export function RiskCard({
     </article>
   );
 }
-
-/**
- * Risk Badge Inline Component
- * Compact risk indicator for use in tables, lists, etc.
- */
 
 interface RiskBadgeProps {
   riskLevel: RiskLevel;
@@ -221,11 +195,6 @@ export function RiskBadge({
     </span>
   );
 }
-
-/**
- * Risk Summary Component
- * Displays a concise risk assessment summary
- */
 
 interface RiskSummaryProps {
   riskLevel: RiskLevel;
@@ -270,7 +239,6 @@ export function RiskSummary({
         </div>
       </div>
 
-      {/* Stats */}
       {(matchCount !== undefined || confidence !== undefined) && (
         <div className="flex gap-6">
           {matchCount !== undefined && (

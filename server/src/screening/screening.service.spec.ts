@@ -9,11 +9,14 @@ import { RedisService } from '../common/redis/redis.service';
 import { AiExplainerService } from '../ai-explainer/ai-explainer.service';
 import { AuditService } from '../audit/audit.service';
 import { OsintService } from '../osint/osint.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 const MOCK_CANDIDATES = [
   {
     id: 'entity-1',
     name: 'Roman Abramovich',
+    searchName: 'Roman Abramovich',
+    field: 'name',
     aliases: ['Roman Arkadyevich Abramovich', 'Vova'],
     entityType: 'INDIVIDUAL',
     listSource: 'OFAC_SDN',
@@ -23,6 +26,8 @@ const MOCK_CANDIDATES = [
   {
     id: 'entity-2',
     name: 'United Company RUSAL',
+    searchName: 'UC Rusal',
+    field: 'alias',
     aliases: ['UC Rusal', 'Rusal PLC'],
     entityType: 'ENTITY',
     listSource: 'EU_CONSOLIDATED',
@@ -66,6 +71,10 @@ const mockQueue = {
   addBulk: jest.fn(),
 };
 
+const mockNotifications = {
+  notify: jest.fn(),
+};
+
 describe('ScreeningService', () => {
   let service: ScreeningService;
 
@@ -78,6 +87,7 @@ describe('ScreeningService', () => {
         { provide: AiExplainerService, useValue: mockAi },
         { provide: AuditService, useValue: mockAudit },
         { provide: OsintService, useValue: mockOsint },
+        { provide: NotificationsService, useValue: mockNotifications },
         { provide: getQueueToken('bulk-screening-queue'), useValue: mockQueue },
       ],
     }).compile();
@@ -159,19 +169,16 @@ describe('ScreeningService', () => {
       expect(result.matches[0].matchedName).toBe('UC Rusal');
     });
 
-    it('should persist data, increment usage, and write audit log within a transaction', async () => {
+    it('should persist the result and write an audit log', async () => {
       mockPrisma.$queryRaw.mockResolvedValue([]);
-      mockPrisma.screeningQuery.create.mockResolvedValue({ id: 'query-3' });
+      mockPrisma.screeningQuery.create.mockResolvedValue({
+        id: 'query-3',
+        matches: [],
+      });
 
       await service.screen({ queryName: 'Clean Person' }, 'u-1', 'o-1');
 
-      expect(mockPrisma.$transaction).toHaveBeenCalled();
-
-      expect(mockPrisma.organization.update).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: { queriesUsed: { increment: 1 } },
-        }),
-      );
+      expect(mockPrisma.screeningQuery.create).toHaveBeenCalled();
 
       expect(mockAudit.log).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -196,7 +203,7 @@ describe('ScreeningService', () => {
       expect(mockQueue.addBulk).toHaveBeenCalled();
       expect(mockQueue.addBulk.mock.calls[0][0]).toHaveLength(2);
       expect(result.totalQueued).toBe(2);
-      expect(result.message).toContain('kuyruğa alındı');
+      expect(result.message).toContain('Bulk screening queued');
     });
   });
 });

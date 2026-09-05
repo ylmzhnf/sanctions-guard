@@ -19,6 +19,12 @@ const SIMILARITY_THRESHOLDS = {
   LOW: 50,
 };
 
+const CANDIDATE_FETCH_LIMIT = 500;
+
+const TRIGRAM_PREFILTER = 0.15;
+
+const CACHE_TTL_SECONDS = 900;
+
 @Injectable()
 export class ScreeningService {
   private readonly logger = new Logger(ScreeningService.name);
@@ -33,9 +39,23 @@ export class ScreeningService {
     @InjectQueue('bulk-screening-queue') private readonly bulkQueue: Queue,
   ) {}
 
+  private normalize(str: string): string {
+    return str
+      .toLocaleLowerCase('tr-TR')
+      .normalize('NFKD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/ı/g, 'i')
+      .replace(/ğ/g, 'g')
+      .replace(/ş/g, 's')
+      .replace(/ç/g, 'c')
+      .replace(/ö/g, 'o')
+      .replace(/ü/g, 'u')
+      .trim();
+  }
+
   public calculateSimilarity(str1: string, str2: string): number {
-    const s1 = str1.toLowerCase().trim();
-    const s2 = str2.toLowerCase().trim();
+    const s1 = this.normalize(str1);
+    const s2 = this.normalize(str2);
 
     if (s1.length === 0 || s2.length === 0) return 0;
     if (s1 === s2) return 100;
@@ -52,54 +72,58 @@ export class ScreeningService {
         if (s1[i - 1] === s2[j - 1]) {
           matrix[i][j] = matrix[i - 1][j - 1];
         } else {
-          matrix[i][j] = Math.min(matrix[i - 1][j], matrix[i][j - 1], matrix[i - 1][j - 1]) + 1;
+          matrix[i][j] =
+            Math.min(matrix[i - 1][j], matrix[i][j - 1], matrix[i - 1][j - 1]) +
+            1;
         }
       }
     }
-    
+
     const distance = matrix[s1.length][s2.length];
     const maxLength = Math.max(s1.length, s2.length);
     let score = 100 - (distance * 100) / maxLength;
+
+    const tokens1 = s1.split(/\s+/).filter((t) => t.length >= 2);
+    const tokens2 = s2.split(/\s+/).filter((t) => t.length >= 2);
+
+    if (tokens1.length > 0 && tokens2.length > 0) {
+      let matchedWeight = 0;
+      for (const t1 of tokens1) {
+        const exact = tokens2.some((t2) => t2 === t1);
+        const contained =
+          !exact &&
+          tokens2.some(
+            (t2) =>
+              t1.length >= 3 &&
+              t2.length >= 3 &&
+              (t2.includes(t1) || t1.includes(t2)),
+          );
+
+        if (exact) matchedWeight += 1;
+        else if (contained) matchedWeight += 0.6;
+      }
+      const tokenMatchRatio =
+        matchedWeight / Math.max(tokens1.length, tokens2.length);
+      const tokenScore = tokenMatchRatio * 100;
+
+      if (tokenScore > score) {
+        score = tokenScore;
+      }
+    }
 
     if (s1.includes(s2) || s2.includes(s1)) {
       const minLen = Math.min(s1.length, s2.length);
       if (minLen >= 4) {
         const lenRatio = minLen / maxLength;
-        const substringScore = 85 + (lenRatio * 15);
+
+        const substringScore = 50 + lenRatio * 45;
         if (substringScore > score) {
           score = substringScore;
         }
       }
     }
 
-    const tokens1 = s1.split(/\s+/).filter((t) => t.length >= 2);
-    const tokens2 = s2.split(/\s+/).filter((t) => t.length >= 2);
-
-    if (tokens1.length >= 2 && tokens2.length >= 2) {
-      const shorter = tokens1.length <= tokens2.length ? tokens1 : tokens2;
-      const longer = tokens1.length <= tokens2.length ? tokens2 : tokens1;
-
-      const allTokensMatch = shorter.every((token) =>
-        longer.some(
-          (t) =>
-            t === token ||
-            t.startsWith(token) ||
-            token.startsWith(t) ||
-            (token.length >= 4 && t.includes(token)) ||
-            (t.length >= 4 && token.includes(t)),
-        ),
-      );
-
-      if (allTokensMatch) {
-        const tokenCoverage = shorter.length / longer.length;
-        const tokenScore = 85 + tokenCoverage * 14;
-        if (tokenScore > score) {
-          score = tokenScore;
-        }
-      }
-    }
-
-    return score;
+    return Math.min(100, Math.max(0, score));
   }
 
   private determineRiskLevel(score: number): RiskLevel {
@@ -123,38 +147,46 @@ export class ScreeningService {
       include: { settings: true },
     });
 
-    // Check Redis cache
-    const normalizedQuery = queryName.toLowerCase().replace(/\s+/g, '_');
-    const cacheKey = `screen:v3:${orgId}:${normalizedQuery}:${entityType || 'ALL'}`;
+    const orgThreshold = Math.max(
+      org.settings?.aiThreshold || SIMILARITY_THRESHOLDS.LOW,
+      SIMILARITY_THRESHOLDS.LOW,
+    );
+
+    const normalizedQuery = this.normalize(queryName).replace(/\s+/g, '_');
+
+    const cacheKey = `screen:v4:${orgId}:${normalizedQuery}:${entityType || 'ALL'}:${orgThreshold}`;
 
     const cached = await this.redis.get(cacheKey);
     if (cached) return { ...JSON.parse(cached), fromCache: true };
 
     const rawMatches = await this.prisma.$queryRaw<any[]>`
-      SELECT 
-        id, name AS "searchName", "entityType", country, programs, "listSource", 'name' AS "field"
-      FROM "SanctionedEntity"
-      WHERE "isActive" = true 
-        AND "listSource" IN ('OFAC', 'EU', 'UN', 'UK_HMT', 'CUSTOM', 'OTHER')
-        ${entityType ? Prisma.sql`AND "entityType" = ${entityType}` : Prisma.empty}
-        AND (
-          similarity(name, ${queryName}) >= 0.15 
-          OR name ILIKE ${'%' + queryName + '%'}
-        )
+      SELECT * FROM (
+        SELECT 
+          id, name AS "searchName", "entityType", country, programs, "listSource", 'name' AS "field",
+          similarity(name, ${queryName}) AS "trigramScore"
+        FROM "SanctionedEntity"
+        WHERE "isActive" = true 
+          ${entityType ? Prisma.sql`AND "entityType" = ${entityType}` : Prisma.empty}
+          AND (
+            similarity(name, ${queryName}) >= ${TRIGRAM_PREFILTER}
+            OR name ILIKE ${'%' + queryName + '%'}
+          )
 
-      UNION ALL
+        UNION ALL
 
-      SELECT 
-        id, a AS "searchName", "entityType", country, programs, "listSource", 'alias' AS "field"
-      FROM "SanctionedEntity", unnest("aliases") a
-      WHERE "isActive" = true 
-        AND "listSource" IN ('OFAC', 'EU', 'UN', 'UK_HMT', 'CUSTOM', 'OTHER')
-        ${entityType ? Prisma.sql`AND "entityType" = ${entityType}` : Prisma.empty}
-        AND (
-          similarity(a, ${queryName}) >= 0.15
-          OR a ILIKE ${'%' + queryName + '%'}
-        )
-      LIMIT 50;
+        SELECT 
+          id, a AS "searchName", "entityType", country, programs, "listSource", 'alias' AS "field",
+          similarity(a, ${queryName}) AS "trigramScore"
+        FROM "SanctionedEntity", unnest("aliases") a
+        WHERE "isActive" = true 
+          ${entityType ? Prisma.sql`AND "entityType" = ${entityType}` : Prisma.empty}
+          AND (
+            similarity(a, ${queryName}) >= ${TRIGRAM_PREFILTER}
+            OR a ILIKE ${'%' + queryName + '%'}
+          )
+      ) candidates
+      ORDER BY "trigramScore" DESC
+      LIMIT ${CANDIDATE_FETCH_LIMIT};
     `;
 
     const byEntity = new Map<string, any>();
@@ -177,7 +209,6 @@ export class ScreeningService {
       }
     }
 
-    const orgThreshold = org.settings?.aiThreshold || 50;
     const topMatches = Array.from(byEntity.values())
       .filter((m) => m.score >= orgThreshold)
       .sort((a, b) => b.score - a.score)
@@ -261,12 +292,20 @@ export class ScreeningService {
       matches: topMatches,
     };
 
-    await this.redis.set(cacheKey, JSON.stringify(finalResult), 3600);
+    await this.redis.set(
+      cacheKey,
+      JSON.stringify(finalResult),
+      CACHE_TTL_SECONDS,
+    );
 
     return { ...finalResult, fromCache: false };
   }
 
-  async bulkScreen(dto: { names: string[]; entityType?: string }, userId: string, orgId: string) {
+  async bulkScreen(
+    dto: { names: string[]; entityType?: string },
+    userId: string,
+    orgId: string,
+  ) {
     const batchId = randomUUID();
     const jobs = dto.names.map((name) => ({
       name: 'screen-single-name',
@@ -290,11 +329,17 @@ export class ScreeningService {
     };
   }
 
-  async getHistory(orgId: string, page = 1, limit = 20, filters?: { riskLevel?: RiskLevel; queryName?: string }) {
+  async getHistory(
+    orgId: string,
+    page = 1,
+    limit = 20,
+    filters?: { riskLevel?: RiskLevel; queryName?: string },
+  ) {
     const where: Prisma.ScreeningQueryWhereInput = { orgId };
 
     if (filters?.riskLevel) where.riskLevel = filters.riskLevel;
-    if (filters?.queryName) where.queryName = { contains: filters.queryName, mode: 'insensitive' };
+    if (filters?.queryName)
+      where.queryName = { contains: filters.queryName, mode: 'insensitive' };
 
     const [queries, total] = await Promise.all([
       this.prisma.screeningQuery.findMany({
