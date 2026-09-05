@@ -9,4 +9,5 @@ COPY . .
 
 EXPOSE 3000
 
-CMD ["pnpm", "dev", "--", "--hostname", "0.0.0.0", "--port", "3000"]
+RUN pnpm run build
+CMD ["pnpm", "start", "--", "--hostname", "0.0.0.0", "--port", "3000"]

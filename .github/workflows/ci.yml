@@ -57,6 +57,15 @@ jobs:
 
       - name: Type-check frontend
         run: pnpm --filter client exec tsc --noEmit
+      
+      - name: Build frontend (Production Check)
+        run: pnpm --filter client run build
+
+      - name: Validate Prisma Schema
+        run: pnpm --filter server exec prisma validate
 
       - name: Build backend
         run: pnpm --filter server run build
+
+      - name: Run Backend Unit Tests
+        run: pnpm --filter server run test
