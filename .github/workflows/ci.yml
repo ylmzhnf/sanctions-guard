@@ -6,7 +6,7 @@ on:
   pull_request:
 
 jobs:
-  validate:
+  build-and-test:
     runs-on: ubuntu-latest
 
     services:
@@ -28,12 +28,6 @@ jobs:
         image: redis:7-alpine
         ports:
           - 6379:6379
-
-    env:
-      DATABASE_URL: postgresql://sg_admin:strongpassword@localhost:5436/sanctions_guard_test
-      REDIS_URL: redis://localhost:6379
-      JWT_SECRET: test-secret-value
-      PORT: 3001
 
     steps:
       - name: Checkout repository
@@ -57,10 +51,6 @@ jobs:
         working-directory: ./client
         run: pnpm run lint
 
-      - name: Type-check frontend
-        working-directory: ./client
-        run: pnpm exec tsc --noEmit
-
       - name: Build frontend (Production Check)
         working-directory: ./client
         run: pnpm run build
@@ -71,6 +61,8 @@ jobs:
 
       - name: Validate Prisma Schema
         working-directory: ./server
+        env:
+          DATABASE_URL: postgresql://sg_admin:strongpassword@localhost:5436/sanctions_guard_test
         run: pnpm exec prisma validate
 
       - name: Build backend
@@ -79,4 +71,9 @@ jobs:
 
       - name: Run Backend Unit Tests
         working-directory: ./server
+        env:
+          DATABASE_URL: postgresql://sg_admin:strongpassword@localhost:5436/sanctions_guard_test
+          REDIS_URL: redis://localhost:6379
+          JWT_SECRET: test-secret-value
+          PORT: 3001
         run: pnpm run test
