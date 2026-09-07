@@ -9,11 +9,24 @@ async function bootstrap() {
 
   app.setGlobalPrefix('api/v1');
 
+  const allowedOrigins = (
+    process.env.NODE_ENV === 'production'
+      ? process.env.FRONTEND_URLS || process.env.FRONTEND_URL || ''
+      : 'http://localhost:3000'
+  )
+    .split(',')
+    .map((origin) => origin.trim().replace(/\/$/, ''))
+    .filter(Boolean);
+
   app.enableCors({
-    origin:
-      process.env.NODE_ENV === 'production'
-        ? process.env.FRONTEND_URL
-        : 'http://localhost:3000',
+    origin: (requestOrigin, callback) => {
+      if (!requestOrigin || allowedOrigins.includes(requestOrigin)) {
+        callback(null, true);
+        return;
+      }
+
+      callback(null, false);
+    },
     credentials: true,
   });
 
