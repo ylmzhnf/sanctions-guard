@@ -7,8 +7,9 @@ RUN corepack enable && pnpm install --frozen-lockfile
 
 COPY . .
 RUN pnpm prisma generate
-RUN pnpm run build
+
+RUN pnpm build
 
 EXPOSE 3001
 
-CMD ["pnpm", "run", "start:prod"]
+CMD ["pnpm", "start:prod"]
