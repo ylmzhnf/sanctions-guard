@@ -81,26 +81,31 @@ export class SanctionsSyncService implements OnModuleInit {
       const entities = await provider.fetchAndParse();
       if (!entities.length) return;
 
-      const BATCH_SIZE = 300;
+      const BATCH_SIZE = 100;
       for (let i = 0; i < entities.length; i += BATCH_SIZE) {
         const batch = entities.slice(i, i + BATCH_SIZE);
 
         await this.prisma.$transaction(
-          batch.map((e) =>
-            this.prisma.sanctionedEntity.upsert({
-              where: { externalId: e.externalId },
-              update: {
-                ...this.mapEntity(e),
-                lastSyncedAt: startTime,
-                isActive: true,
-              },
-              create: {
-                ...this.mapEntity(e),
-                lastSyncedAt: startTime,
-                isActive: true,
-              },
-            }),
-          ),
+          async (transaction) => {
+            await Promise.all(
+              batch.map((e) =>
+                transaction.sanctionedEntity.upsert({
+                  where: { externalId: e.externalId },
+                  update: {
+                    ...this.mapEntity(e),
+                    lastSyncedAt: startTime,
+                    isActive: true,
+                  },
+                  create: {
+                    ...this.mapEntity(e),
+                    lastSyncedAt: startTime,
+                    isActive: true,
+                  },
+                }),
+              ),
+            );
+          },
+          { maxWait: 10000, timeout: 60000 },
         );
         stats.added += batch.length;
       }
