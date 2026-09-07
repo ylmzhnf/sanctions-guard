@@ -17,8 +17,9 @@ This project demonstrates a practical sanctions screening workflow for a modern 
 - Frontend: Next.js + Tailwind CSS
 - Backend: NestJS
 - Database: PostgreSQL + Prisma
-- Caching: Redis
+- Caching/Queue: Redis (Upstash-compatible)
 - AI: OpenAI or Anthropic API
+- Deployment: Railway (API) and Vercel (frontend)
 
 ## Core MVP Features
 
@@ -67,41 +68,40 @@ This project demonstrates a practical sanctions screening workflow for a modern 
 ### 1. Install dependencies
 
 ```bash
-cd server && npm install
-cd ../client && npm install
+pnpm install
 ```
 
 ### 2. Start infrastructure
 
 ```bash
-cd server
-npm run docker:up
+docker compose up -d db redis
 ```
 
 ### 3. Run backend
 
 ```bash
 cd server
-npm run start:dev
+pnpm prisma migrate deploy
+pnpm start:dev
 ```
 
 ### 4. Run frontend
 
 ```bash
 cd client
-npm run dev
+pnpm dev
 ```
 
 ### 5. Default local URLs
 
 - Frontend: http://localhost:3000
-- Backend API: http://localhost:3001
+- Backend API: http://localhost:3001/api/v1
 - PostgreSQL: localhost:5435
 - Redis: localhost:6379
 
 ## Environment Variables
 
-Create a `.env` file in the server project and include the required keys:
+Create `server/.env` for local development and include the required keys:
 
 ```bash
 DATABASE_URL="postgresql://..."
@@ -109,6 +109,17 @@ JWT_SECRET="your-secret"
 OPENAI_API_KEY="..."
 # or ANTHROPIC_API_KEY="..."
 REDIS_URL="redis://localhost:6379"
+FRONTEND_URL="http://localhost:3000"
+```
+
+For production, configure these values in Railway Variables instead of committing
+`.env` files. Use the Supabase Session Pooler URL for `DATABASE_URL`, the Upstash
+Redis URL for `REDIS_URL`, and the deployed Vercel URL for `FRONTEND_URL`.
+
+The frontend requires this Vercel variable:
+
+```bash
+NEXT_PUBLIC_API_URL="https://<railway-domain>/api/v1"
 ```
 
 ## MVP Scope
@@ -157,7 +168,7 @@ This is a portfolio-focused MVP, not a production-grade multi-tenant SaaS platfo
 curl -X POST http://localhost:3001/api/v1/screening/screen \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
-  -d '{"name": "Viktor Bout"}'
+  -d '{"queryName": "Viktor Bout", "entityType": "INDIVIDUAL"}'
 ```
 
 Response:
@@ -192,11 +203,11 @@ Response:
 
 | Level    | Similarity Score | Action                               |
 | -------- | ---------------- | ------------------------------------ |
-| CRITICAL | ≥ 97%            | Immediate review — block transaction |
+| CRITICAL | ≥ 95%            | Immediate review — block transaction |
 | HIGH     | ≥ 85%            | Human review required                |
 | MEDIUM   | ≥ 70%            | Review recommended                   |
-| LOW      | ≥ 55%            | Flag for awareness                   |
-| CLEAR    | < 55%            | No action required                   |
+| LOW      | ≥ 50%            | Flag for awareness                   |
+| CLEAR    | < 50%            | No action required                   |
 
 ### Environment Variables Reference
 
@@ -205,8 +216,9 @@ Response:
 | `DATABASE_URL`      | ✓        | PostgreSQL connection string      |
 | `REDIS_URL`         | ✓        | Redis connection string           |
 | `JWT_SECRET`        | ✓        | 64-char hex string                |
-| `OPENAI_API_KEY`    | ✓        | OpenAI API key (or use Anthropic) |
-| `ANTHROPIC_API_KEY` | ✓        | Anthropic API key (or use OpenAI) |
+| `OPENAI_API_KEY`    | Optional | OpenAI API key (or use Anthropic) |
+| `ANTHROPIC_API_KEY` | Optional | Anthropic API key (or use OpenAI) |
+| `FRONTEND_URL`      | ✓        | Allowed frontend origin for CORS  |
 
 ---
 
