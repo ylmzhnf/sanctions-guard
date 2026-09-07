@@ -12,6 +12,10 @@ This project demonstrates a practical sanctions screening workflow for a modern 
 - Clean, professional dashboard for investigation workflows
 - Dockerized local development environment for rapid iteration
 
+## Live Demo
+
+[Open Sanctions-Guard](https://sanctions-guard-client.vercel.app/)
+
 ## Core Technical Stack
 
 - Frontend: Next.js + Tailwind CSS
