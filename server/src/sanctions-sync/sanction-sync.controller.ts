@@ -27,7 +27,7 @@ export class SanctionSyncController {
 
   @Get('status')
   async getSyncStatus() {
-    const [total, active, bySource, isRunning] = await Promise.all([
+    const [total, active, bySource] = await Promise.all([
       this.prisma.sanctionedEntity.count(),
       this.prisma.sanctionedEntity.count({ where: { isActive: true } }),
       this.prisma.sanctionedEntity.groupBy({
@@ -35,8 +35,7 @@ export class SanctionSyncController {
         _count: true,
         where: { isActive: true },
       }),
-      this.syncService.isSyncRunning(),
     ]);
-    return { total, active, bySource, isRunning };
+    return { total, active, bySource };
   }
 }

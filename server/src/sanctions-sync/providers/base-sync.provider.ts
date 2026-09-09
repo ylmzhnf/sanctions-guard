@@ -13,8 +13,8 @@ export abstract class BaseSyncProvider implements SyncProvider {
 
   protected async fetchXmlWithRetry(
     url: string,
-    retries = 2,
-    timeoutMs = 15_000,
+    retries = 3,
+    timeoutMs = 30_000,
   ): Promise<string> {
     let lastError: any = null;
 

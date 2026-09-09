@@ -1,7 +1,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { SyncStatus } from '@prisma/client';
-import { createHash, randomUUID } from 'crypto';
+import { randomUUID } from 'crypto';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { RedisService } from '../common/redis/redis.service';
 import { SyncProvider } from './interfaces/sync-provider.interface';
@@ -10,13 +10,6 @@ import { OfacProvider } from './providers/ofac.provider';
 import { EuProvider } from './providers/eu.provider';
 import { UnProvider } from './providers/un.provider';
 import { UkProvider } from './providers/uk.provider';
-
-type ProviderSyncResult = {
-  source: string;
-  success: boolean;
-  skipped?: boolean;
-  error?: string;
-};
 
 @Injectable()
 export class SanctionsSyncService implements OnModuleInit {
@@ -65,19 +58,11 @@ export class SanctionsSyncService implements OnModuleInit {
 
       this.logger.log('Lock acquired. Starting global sync...');
 
-      const results: ProviderSyncResult[] = [];
       for (const provider of this.providers) {
-        results.push(await this.runProviderSync(provider));
+        await this.runProviderSync(provider);
       }
 
-      const failed = results.filter((result) => !result.success);
-      return {
-        success: failed.length === 0,
-        results,
-        error: failed.length
-          ? `${failed.length} sanctions provider(s) failed`
-          : undefined,
-      };
+      return { success: true };
     } catch (error) {
       this.logger.error(`Global sync failed: ${error.message}`);
       return { success: false, error: error.message };
@@ -86,13 +71,7 @@ export class SanctionsSyncService implements OnModuleInit {
     }
   }
 
-  async isSyncRunning(): Promise<boolean> {
-    return (await this.redis.getClient().exists(this.LOCK_KEY)) === 1;
-  }
-
-  private async runProviderSync(
-    provider: SyncProvider,
-  ): Promise<ProviderSyncResult> {
+  private async runProviderSync(provider: SyncProvider) {
     const source = provider.sourceName;
     const startTime = new Date();
     const stats = { added: 0, updated: 0, removed: 0 };
@@ -100,23 +79,7 @@ export class SanctionsSyncService implements OnModuleInit {
 
     try {
       const entities = await provider.fetchAndParse();
-      if (!entities.length) {
-        throw new Error('Provider returned no entities');
-      }
-
-      const contentHash = this.createContentHash(entities);
-      const hashKey = `sanctions_sync_hash:${source}`;
-      const previousHash = await this.prisma.systemSetting.findUnique({
-        where: { key: hashKey },
-        select: { value: true },
-      });
-
-      if (previousHash?.value === contentHash) {
-        this.logger.log(
-          `[${source}] Source unchanged. Skipping database write.`,
-        );
-        return { source, success: true, skipped: true };
-      }
+      if (!entities.length) return;
 
       const BATCH_SIZE = 100;
       for (let i = 0; i < entities.length; i += BATCH_SIZE) {
@@ -157,12 +120,6 @@ export class SanctionsSyncService implements OnModuleInit {
       });
       stats.removed = deactivated.count;
 
-      await this.prisma.systemSetting.upsert({
-        where: { key: hashKey },
-        update: { value: contentHash },
-        create: { key: hashKey, value: contentHash },
-      });
-
       this.logger.log(
         `[${source}] Sync complete. Processed: ${stats.added}, Removed: ${stats.removed}`,
       );
@@ -172,13 +129,6 @@ export class SanctionsSyncService implements OnModuleInit {
     }
 
     await this.logSync(source, stats, errorMsg);
-    return errorMsg
-      ? { source, success: false, error: errorMsg }
-      : { source, success: true };
-  }
-
-  private createContentHash(entities: unknown[]): string {
-    return createHash('sha256').update(JSON.stringify(entities)).digest('hex');
   }
 
   private mapEntity(e: any) {
