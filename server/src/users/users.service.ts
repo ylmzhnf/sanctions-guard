@@ -67,7 +67,8 @@ export class UsersService {
     }
 
     const existing = await this.prisma.user.findUnique({ where: { email } });
-    if (existing) throw new ConflictException('Bu e-posta adresi zaten kayıtlı.');
+    if (existing)
+      throw new ConflictException('Bu e-posta adresi zaten kayıtlı.');
 
     const passwordHash = await this.hashPassword(dto.password);
 

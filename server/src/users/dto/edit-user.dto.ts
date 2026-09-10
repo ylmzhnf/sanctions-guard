@@ -20,7 +20,9 @@ export class EditUserDto {
   @IsOptional()
   name?: string;
 
-  @ApiPropertyOptional({ description: 'Kullanıcının ilk girişte şifre değiştirmesi zorunlu mu?' })
+  @ApiPropertyOptional({
+    description: 'Kullanıcının ilk girişte şifre değiştirmesi zorunlu mu?',
+  })
   @IsBoolean()
   @IsOptional()
   mustChangePassword?: boolean;
@@ -30,7 +32,10 @@ export class EditUserDto {
   @IsOptional()
   role?: Role;
 
-  @ApiPropertyOptional({ minLength: 8, description: 'Yeni şifre (belirlenecekse)' })
+  @ApiPropertyOptional({
+    minLength: 8,
+    description: 'Yeni şifre (belirlenecekse)',
+  })
   @IsString()
   @MinLength(8, { message: 'Şifre en az 8 karakter olmalıdır' })
   @IsOptional()

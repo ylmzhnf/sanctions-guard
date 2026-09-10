@@ -19,6 +19,7 @@
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "db:seed:test": "dotenv -e .env.test -- tsx prisma/seed.test.ts",
+    "db:seed:demo": "tsx prisma/seed.demo.ts",
     "test:init": "dotenv -e .env.test -- npx prisma migrate deploy && npm run db:seed:test && dotenv -e .env.test -- jest",
     "docker:up": "docker-compose up -d",
     "docker:down": "docker-compose down"

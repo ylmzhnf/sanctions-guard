@@ -47,48 +47,50 @@ describe('Security Guards', () => {
     });
 
     it('should allow SUPER_ADMIN to access ADMIN endpoints', () => {
-      const context = createMockContext(
-        { role: Role.SUPER_ADMIN },
-        [Role.ADMIN, Role.SUPER_ADMIN],
-      );
+      const context = createMockContext({ role: Role.SUPER_ADMIN }, [
+        Role.ADMIN,
+        Role.SUPER_ADMIN,
+      ]);
       expect(rolesGuard.canActivate(context)).toBe(true);
     });
 
     it('should allow ADMIN to access ADMIN endpoints', () => {
-      const context = createMockContext(
-        { role: Role.ADMIN },
-        [Role.ADMIN, Role.SUPER_ADMIN],
-      );
+      const context = createMockContext({ role: Role.ADMIN }, [
+        Role.ADMIN,
+        Role.SUPER_ADMIN,
+      ]);
       expect(rolesGuard.canActivate(context)).toBe(true);
     });
 
     it('should deny USER access to ADMIN endpoints', () => {
-      const context = createMockContext(
-        { role: Role.USER },
-        [Role.ADMIN, Role.SUPER_ADMIN],
-      );
+      const context = createMockContext({ role: Role.USER }, [
+        Role.ADMIN,
+        Role.SUPER_ADMIN,
+      ]);
       expect(() => rolesGuard.canActivate(context)).toThrow(ForbiddenException);
     });
 
     it('should deny USER access to SUPER_ADMIN only endpoints', () => {
-      const context = createMockContext(
-        { role: Role.USER },
-        [Role.SUPER_ADMIN],
-      );
+      const context = createMockContext({ role: Role.USER }, [
+        Role.SUPER_ADMIN,
+      ]);
       expect(() => rolesGuard.canActivate(context)).toThrow(ForbiddenException);
     });
 
     it('should deny ADMIN access to SUPER_ADMIN only endpoints', () => {
-      const context = createMockContext(
-        { role: Role.ADMIN },
-        [Role.SUPER_ADMIN],
-      );
+      const context = createMockContext({ role: Role.ADMIN }, [
+        Role.SUPER_ADMIN,
+      ]);
       expect(() => rolesGuard.canActivate(context)).toThrow(ForbiddenException);
     });
   });
 
   describe('OrgIsolationGuard', () => {
-    const createMockContext = (user: any, params: any = {}, skipIsolation = false) => {
+    const createMockContext = (
+      user: any,
+      params: any = {},
+      skipIsolation = false,
+    ) => {
       jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(skipIsolation);
       return {
         switchToHttp: () => ({
@@ -120,7 +122,9 @@ describe('Security Guards', () => {
         { role: Role.ADMIN, orgId: 'org1' },
         { orgId: 'org2' },
       );
-      expect(() => orgIsolationGuard.canActivate(context)).toThrow(ForbiddenException);
+      expect(() => orgIsolationGuard.canActivate(context)).toThrow(
+        ForbiddenException,
+      );
     });
 
     it('should allow access when skipIsolation decorator is present', () => {

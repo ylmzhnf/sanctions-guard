@@ -18,6 +18,8 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import api from "@/lib/api";
+import { useAuthStore } from "@/lib/store";
+import { isDemoUser } from "@/lib/auth-utils";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
 
@@ -57,6 +59,8 @@ function SearchContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const queryClient = useQueryClient();
+  const { user } = useAuthStore();
+  const isDemo = isDemoUser(user);
 
   const [name, setName] = useState(searchParams.get("name") || "");
   const [entityType, setEntityType] = useState("");
@@ -71,6 +75,8 @@ function SearchContent() {
 
   const searchMutation = useMutation({
     mutationFn: async (params: { name: string; type: string }) => {
+      // Demo and real users hit the exact same real screening endpoint;
+      // isDemo only affects backend authorization, never the request path.
       const response = await api.post("/screening/screen", {
         queryName: params.name,
         entityType: params.type || undefined,
@@ -206,15 +212,17 @@ function SearchContent() {
               {isSearching ? "Screening…" : "Screen"}
             </button>
 
-            <button
-              type="button"
-              onClick={() => router.push("/dashboard/search/bulk")}
-              disabled={isSearching}
-              className="bg-secondary text-secondary-foreground hover:bg-muted border border-border px-4 py-2.5 rounded-md text-sm font-semibold transition-colors disabled:opacity-50 flex items-center justify-center gap-2 w-full md:w-auto shrink-0"
-            >
-              <FileSpreadsheet className="w-4 h-4" />
-              Batch
-            </button>
+            {!isDemo && (
+              <button
+                type="button"
+                onClick={() => router.push("/dashboard/search/bulk")}
+                disabled={isSearching}
+                className="bg-secondary text-secondary-foreground hover:bg-muted border border-border px-4 py-2.5 rounded-md text-sm font-semibold transition-colors disabled:opacity-50 flex items-center justify-center gap-2 w-full md:w-auto shrink-0"
+              >
+                <FileSpreadsheet className="w-4 h-4" />
+                Batch
+              </button>
+            )}
           </div>
         </form>
 

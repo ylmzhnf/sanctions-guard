@@ -7,13 +7,12 @@ import { createHmac, randomUUID } from 'crypto';
 @Injectable()
 export class AuditService {
   private readonly logger = new Logger(AuditService.name);
-  
+
   private readonly hmacSecret =
     process.env.AUDIT_SECRET || 'audit-integrity-salt-secure-key';
 
   constructor(private readonly prisma: PrismaService) {}
 
-  
   private canonicalStringify(obj: any): string {
     if (obj === null || typeof obj !== 'object') {
       return JSON.stringify(obj);
@@ -30,7 +29,6 @@ export class AuditService {
     return '{' + result.join(',') + '}';
   }
 
-  
   private generateHash(payload: object): string {
     const canonicalPayload = this.canonicalStringify(payload);
     return createHmac('sha256', this.hmacSecret)
@@ -38,7 +36,6 @@ export class AuditService {
       .digest('hex');
   }
 
-  
   async log(data: AuditEntryDto): Promise<void> {
     const id = randomUUID();
     const timestamp = new Date().toISOString();
@@ -64,14 +61,12 @@ export class AuditService {
           actorId,
           orgId: data.orgId,
           queryId: data.queryId,
-          metadata: data.metadata as Prisma.InputJsonValue,
+          metadata: data.metadata,
           integrityHash,
           createdAt: new Date(timestamp),
         },
       });
     } catch (err) {
-      
-      
       this.logger.error(
         `CRITICAL: Audit log write failed for action ${data.action}`,
         err.stack,
@@ -79,7 +74,6 @@ export class AuditService {
     }
   }
 
-  
   async verifyLog(logId: string): Promise<{ valid: boolean; log: any }> {
     const log = await this.prisma.auditLog.findUniqueOrThrow({
       where: { id: logId },
@@ -105,7 +99,6 @@ export class AuditService {
     return { valid, log };
   }
 
-  
   async getOrgLogs(orgId: string, page = 1, limit = 50, search?: string) {
     const skip = (page - 1) * limit;
 
@@ -148,7 +141,6 @@ export class AuditService {
     };
   }
 
-  
   async update() {
     throw new ForbiddenException(
       'Audit logs are immutable and cannot be modified.',

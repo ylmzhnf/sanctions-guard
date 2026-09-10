@@ -2,22 +2,44 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   ShieldCheck,
   ArrowRight,
   Globe,
   ShieldAlert,
   Fingerprint,
+  Loader2,
 } from "lucide-react";
 import { useAuthStore } from "@/lib/store";
+import { auth } from "@/lib/api";
 
 export default function HomePage() {
-  const { token } = useAuthStore();
+  const { token, setAuth } = useAuthStore();
+  const router = useRouter();
   const [isMounted, setIsMounted] = useState(false);
+  const [isDemoLoading, setIsDemoLoading] = useState(false);
+  const [demoError, setDemoError] = useState<string | null>(null);
 
   useEffect(() => {
     setIsMounted(true);
   }, []);
+
+  const handleTryDemo = async () => {
+    setDemoError(null);
+    setIsDemoLoading(true);
+    try {
+      const { token: demoToken, user } = await auth.demoLogin();
+      setAuth(user, demoToken);
+      router.push("/dashboard");
+    } catch (err: any) {
+      setDemoError(
+        err?.message || "Demo Mode is currently unavailable. Please try again.",
+      );
+    } finally {
+      setIsDemoLoading(false);
+    }
+  };
 
   if (!isMounted) return <div className="min-h-screen bg-background" />;
 
@@ -43,6 +65,16 @@ export default function HomePage() {
               </Link>
             ) : (
               <>
+                <button
+                  onClick={handleTryDemo}
+                  disabled={isDemoLoading}
+                  className="text-muted-foreground hover:text-foreground text-sm font-medium transition-colors hidden sm:flex items-center gap-1.5 disabled:opacity-50"
+                >
+                  {isDemoLoading && (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  )}
+                  Try Live Demo
+                </button>
                 <Link
                   href="/auth/login"
                   className="text-muted-foreground hover:text-foreground text-sm font-medium transition-colors hidden sm:block"
@@ -79,13 +111,34 @@ export default function HomePage() {
           AI-powered risk explanations. Immutable audit trail for regulators.
         </p>
 
-        <Link
-          href={token ? "/dashboard" : "/auth/register"}
-          className="w-full sm:w-auto bg-primary text-primary-foreground hover:bg-primary/90 px-7 py-3 rounded-md text-sm font-semibold transition-colors inline-flex items-center justify-center gap-2"
-        >
-          {token ? "Open Workspace" : "Get Started"}
-          <ArrowRight className="w-4 h-4" />
-        </Link>
+        <div className="flex flex-col sm:flex-row items-center gap-3">
+          <Link
+            href={token ? "/dashboard" : "/auth/register"}
+            className="w-full sm:w-auto bg-primary text-primary-foreground hover:bg-primary/90 px-7 py-3 rounded-md text-sm font-semibold transition-colors inline-flex items-center justify-center gap-2"
+          >
+            {token ? "Open Workspace" : "Get Started"}
+            <ArrowRight className="w-4 h-4" />
+          </Link>
+
+          {!token && (
+            <button
+              onClick={handleTryDemo}
+              disabled={isDemoLoading}
+              className="w-full sm:w-auto bg-secondary text-secondary-foreground hover:bg-muted border border-border px-7 py-3 rounded-md text-sm font-semibold transition-colors inline-flex items-center justify-center gap-2 disabled:opacity-50"
+            >
+              {isDemoLoading ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <ShieldCheck className="w-4 h-4" />
+              )}
+              Try Live Demo
+            </button>
+          )}
+        </div>
+
+        {demoError && (
+          <p className="mt-4 text-sm text-destructive">{demoError}</p>
+        )}
       </section>
 
       <section id="features" className="max-w-6xl mx-auto px-6 py-16 md:py-20">
@@ -130,16 +183,19 @@ export default function HomePage() {
           Automatically synced from official global sources
         </p>
         <div className="flex flex-wrap items-center justify-center gap-6 md:gap-12">
-          {["OFAC SDN", "EU Consolidated", "UN Security Council", "UK OFSI"].map(
-            (source) => (
-              <span
-                key={source}
-                className="text-sm md:text-base font-semibold tracking-tight text-slate-600"
-              >
-                {source}
-              </span>
-            ),
-          )}
+          {[
+            "OFAC SDN",
+            "EU Consolidated",
+            "UN Security Council",
+            "UK OFSI",
+          ].map((source) => (
+            <span
+              key={source}
+              className="text-sm md:text-base font-semibold tracking-tight text-slate-600"
+            >
+              {source}
+            </span>
+          ))}
         </div>
       </section>
 

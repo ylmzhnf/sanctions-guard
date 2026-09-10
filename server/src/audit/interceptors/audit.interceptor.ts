@@ -18,10 +18,10 @@ export class AuditInterceptor implements NestInterceptor {
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
     const request = context.switchToHttp().getRequest<RequestWithUser>();
-    
-    
+
     const user = request.user;
-    const queryName = (request.query['queryName'] || request.body['name']) as string;
+    const queryName = (request.query['queryName'] ||
+      request.body['name']) as string;
 
     if (!user || !queryName) {
       return next.handle();
@@ -30,19 +30,21 @@ export class AuditInterceptor implements NestInterceptor {
     return next.handle().pipe(
       tap({
         next: (body: any) => {
-          
           this.handleLog(user, queryName, body);
         },
         error: (err) => {
-          
           this.handleLog(user, queryName, null, err);
         },
       }),
     );
   }
 
-  
-  private async handleLog(user: any, queryName: string, body: any, error?: any) {
+  private async handleLog(
+    user: any,
+    queryName: string,
+    body: any,
+    error?: any,
+  ) {
     try {
       const queryId = body?.queryId || null;
       const riskLevel = body?.riskLevel || (error ? 'ERROR' : 'UNKNOWN');
@@ -52,19 +54,17 @@ export class AuditInterceptor implements NestInterceptor {
         actorId: user.id,
         orgId: user.orgId,
         action: error ? 'SCREENING_FAILED' : 'SCREENING_SEARCH',
-        queryId, 
+        queryId,
         metadata: {
           queryName,
           riskLevel,
           matchedCount,
           status: error ? 'FAILED' : 'SUCCESS',
           errorMessage: error?.message || null,
-          ipAddress: user.ip || 'N/A', 
+          ipAddress: user.ip || 'N/A',
         },
       });
     } catch (logError) {
-      
-      
       this.logger.error(
         `Audit logging failed for user ${user.id} during search: ${queryName}`,
         logError.stack,

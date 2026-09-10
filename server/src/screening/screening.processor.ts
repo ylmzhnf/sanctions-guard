@@ -23,17 +23,25 @@ export class ScreeningProcessor extends WorkerHost {
         orgId,
       );
 
-      return { success: true, riskLevel: result.riskLevel, queryId: result.query.id };
+      return {
+        success: true,
+        riskLevel: result.riskLevel,
+        queryId: result.query.id,
+      };
     } catch (error: any) {
-      this.logger.error(`[Batch: ${batchId}] Failed to screen "${name}": ${error.message}`);
-      
-      throw error; 
+      this.logger.error(
+        `[Batch: ${batchId}] Failed to screen "${name}": ${error.message}`,
+      );
+
+      throw error;
     }
   }
 
   @OnWorkerEvent('failed')
   onFailed(job: Job, error: Error) {
-    this.logger.warn(`Job ${job?.id} (Batch: ${job?.data?.batchId}) failed. Reason: ${error.message}`);
+    this.logger.warn(
+      `Job ${job?.id} (Batch: ${job?.data?.batchId}) failed. Reason: ${error.message}`,
+    );
   }
 
   @OnWorkerEvent('completed')

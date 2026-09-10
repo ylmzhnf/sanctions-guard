@@ -3,7 +3,6 @@ import { PrismaService } from '../common/prisma/prisma.service';
 import { UpdateSettingsDto } from './dto/update-settings.dto';
 import { AiProvider } from '@prisma/client';
 
-
 const DEFAULTS = {
   THRESHOLD: 85,
   PROVIDER: AiProvider.OPENAI,
@@ -20,7 +19,6 @@ export class SettingsService {
       where: { orgId },
     });
 
-    
     if (!settings) {
       return {
         threshold: DEFAULTS.THRESHOLD,
@@ -43,7 +41,6 @@ export class SettingsService {
   }
 
   async updateConfig(orgId: string, dto: UpdateSettingsDto) {
-    
     const aiApiKey = this.processKey(dto.aiApiKey);
     const osintApiKey = this.processKey(dto.osintApiKey);
 
@@ -65,13 +62,11 @@ export class SettingsService {
     });
   }
 
-  
   private maskKey(key: string | null | undefined, prefix: string): string {
     if (!key || key.length < 8) return '';
     return `${prefix}...${key.slice(-4)}`;
   }
 
-  
   private processKey(key?: string): string | null | undefined {
     if (key === undefined) return undefined;
     return key.trim() === '' ? null : key.trim();

@@ -16,6 +16,8 @@ import { BullModule } from '@nestjs/bullmq';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { HealthController } from './health.controller';
+import { DemoGuard } from './auth/guard/demo.guard';
+import { RedisModule } from './common/redis/redis.module';
 
 @Module({
   imports: [
@@ -43,6 +45,7 @@ import { HealthController } from './health.controller';
           },
     }),
     PrismaModule,
+    RedisModule,
     ScreeningModule,
     AuthModule,
     UsersModule,
@@ -54,6 +57,10 @@ import { HealthController } from './health.controller';
     NotificationsModule,
   ],
   controllers: [AppController, HealthController],
-  providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],
+  providers: [
+    AppService,
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
+    { provide: APP_GUARD, useClass: DemoGuard },
+  ],
 })
 export class AppModule {}

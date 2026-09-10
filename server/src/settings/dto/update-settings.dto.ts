@@ -27,7 +27,10 @@ export class UpdateSettingsDto {
   @IsString()
   osintApiKey?: string;
 
-  @ApiPropertyOptional({ enum: AiProvider, description: 'Kullanılacak AI sağlayıcısı' })
+  @ApiPropertyOptional({
+    enum: AiProvider,
+    description: 'Kullanılacak AI sağlayıcısı',
+  })
   @IsOptional()
   @IsEnum(AiProvider)
   aiProvider?: AiProvider;

@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Queue } from 'bullmq';
 import { InjectQueue } from '@nestjs/bullmq';
 import { randomUUID } from 'crypto';
-import { Prisma, RiskLevel, ScreeningStatus } from '@prisma/client';
+import { Prisma, RiskLevel, ScreeningStatus, ListSource } from '@prisma/client';
 
 import { PrismaService } from '../common/prisma/prisma.service';
 import { RedisService } from '../common/redis/redis.service';
@@ -24,6 +24,28 @@ const CANDIDATE_FETCH_LIMIT = 500;
 const TRIGRAM_PREFILTER = 0.15;
 
 const CACHE_TTL_SECONDS = 900;
+
+export interface MatchCandidate {
+  id: string;
+  matchedName: string;
+  matchedField: string;
+  entityType: string;
+  listSource: ListSource;
+  country: string | null;
+  programs: string[];
+  score: number;
+}
+
+interface RawMatchRow {
+  id: string;
+  searchName: string;
+  entityType: string;
+  country: string | null;
+  programs: string[];
+  listSource: ListSource;
+  field: string;
+  trigramScore: number;
+}
 
 @Injectable()
 export class ScreeningService {
@@ -159,63 +181,11 @@ export class ScreeningService {
     const cached = await this.redis.get(cacheKey);
     if (cached) return { ...JSON.parse(cached), fromCache: true };
 
-    const rawMatches = await this.prisma.$queryRaw<any[]>`
-      SELECT * FROM (
-        SELECT 
-          id, name AS "searchName", "entityType", country, programs, "listSource", 'name' AS "field",
-          similarity(name, ${queryName}) AS "trigramScore"
-        FROM "SanctionedEntity"
-        WHERE "isActive" = true 
-          ${entityType ? Prisma.sql`AND "entityType" = ${entityType}` : Prisma.empty}
-          AND (
-            similarity(name, ${queryName}) >= ${TRIGRAM_PREFILTER}
-            OR name ILIKE ${'%' + queryName + '%'}
-          )
-
-        UNION ALL
-
-        SELECT 
-          id, a AS "searchName", "entityType", country, programs, "listSource", 'alias' AS "field",
-          similarity(a, ${queryName}) AS "trigramScore"
-        FROM "SanctionedEntity", unnest("aliases") a
-        WHERE "isActive" = true 
-          ${entityType ? Prisma.sql`AND "entityType" = ${entityType}` : Prisma.empty}
-          AND (
-            similarity(a, ${queryName}) >= ${TRIGRAM_PREFILTER}
-            OR a ILIKE ${'%' + queryName + '%'}
-          )
-      ) candidates
-      ORDER BY "trigramScore" DESC
-      LIMIT ${CANDIDATE_FETCH_LIMIT};
-    `;
-
-    const byEntity = new Map<string, any>();
-
-    for (const row of rawMatches) {
-      const exactScore = this.calculateSimilarity(queryName, row.searchName);
-      const existing = byEntity.get(row.id);
-
-      if (!existing || exactScore > existing.score) {
-        byEntity.set(row.id, {
-          id: row.id,
-          matchedName: row.searchName,
-          matchedField: row.field,
-          entityType: row.entityType,
-          listSource: row.listSource,
-          country: row.country,
-          programs: row.programs,
-          score: exactScore,
-        });
-      }
-    }
-
-    const topMatches = Array.from(byEntity.values())
-      .filter((m) => m.score >= orgThreshold)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 10);
-
-    const highestScore = topMatches.length > 0 ? topMatches[0].score : 0;
-    const riskLevel = this.determineRiskLevel(highestScore);
+    const { topMatches, riskLevel, highestScore } = await this.matchEntities(
+      queryName,
+      entityType,
+      orgThreshold,
+    );
 
     let osintResults: OsintResult | null = null;
     let aiExplanation: string | null = null;
@@ -299,6 +269,79 @@ export class ScreeningService {
     );
 
     return { ...finalResult, fromCache: false };
+  }
+
+  // Pure, read-only matching logic shared by the persistent screen() flow and
+  // the read-only demo simulation. Performs no DB writes and calls no
+  // external APIs.
+  async matchEntities(
+    queryName: string,
+    entityType: string | undefined,
+    orgThreshold: number,
+  ): Promise<{
+    topMatches: MatchCandidate[];
+    riskLevel: RiskLevel;
+    highestScore: number;
+  }> {
+    const rawMatches = await this.prisma.$queryRaw<RawMatchRow[]>`
+      SELECT * FROM (
+        SELECT 
+          id, name AS "searchName", "entityType", country, programs, "listSource", 'name' AS "field",
+          similarity(name, ${queryName}) AS "trigramScore"
+        FROM "SanctionedEntity"
+        WHERE "isActive" = true 
+          ${entityType ? Prisma.sql`AND "entityType" = ${entityType}` : Prisma.empty}
+          AND (
+            similarity(name, ${queryName}) >= ${TRIGRAM_PREFILTER}
+            OR name ILIKE ${'%' + queryName + '%'}
+          )
+
+        UNION ALL
+
+        SELECT 
+          id, a AS "searchName", "entityType", country, programs, "listSource", 'alias' AS "field",
+          similarity(a, ${queryName}) AS "trigramScore"
+        FROM "SanctionedEntity", unnest("aliases") a
+        WHERE "isActive" = true 
+          ${entityType ? Prisma.sql`AND "entityType" = ${entityType}` : Prisma.empty}
+          AND (
+            similarity(a, ${queryName}) >= ${TRIGRAM_PREFILTER}
+            OR a ILIKE ${'%' + queryName + '%'}
+          )
+      ) candidates
+      ORDER BY "trigramScore" DESC
+      LIMIT ${CANDIDATE_FETCH_LIMIT};
+    `;
+
+    const byEntity = new Map<string, MatchCandidate>();
+
+    for (const row of rawMatches) {
+      const exactScore = this.calculateSimilarity(queryName, row.searchName);
+      const existing = byEntity.get(row.id);
+
+      if (!existing || exactScore > existing.score) {
+        byEntity.set(row.id, {
+          id: row.id,
+          matchedName: row.searchName,
+          matchedField: row.field,
+          entityType: row.entityType,
+          listSource: row.listSource,
+          country: row.country,
+          programs: row.programs,
+          score: exactScore,
+        });
+      }
+    }
+
+    const topMatches = Array.from(byEntity.values())
+      .filter((m) => m.score >= orgThreshold)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 10);
+
+    const highestScore = topMatches.length > 0 ? topMatches[0].score : 0;
+    const riskLevel = this.determineRiskLevel(highestScore);
+
+    return { topMatches, riskLevel, highestScore };
   }
 
   async bulkScreen(

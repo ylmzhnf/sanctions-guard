@@ -37,9 +37,9 @@ export class NotificationsService {
 
   async markAsRead(notificationId: string, userId: string) {
     return this.prisma.notification.updateMany({
-      where: { 
+      where: {
         id: notificationId,
-        userId 
+        userId,
       },
       data: { isRead: true },
     });
@@ -47,9 +47,9 @@ export class NotificationsService {
 
   async markAllAsRead(userId: string) {
     return this.prisma.notification.updateMany({
-      where: { 
+      where: {
         userId,
-        isRead: false 
+        isRead: false,
       },
       data: { isRead: true },
     });
@@ -57,24 +57,29 @@ export class NotificationsService {
 
   async deleteNotification(notificationId: string, userId: string) {
     return this.prisma.notification.deleteMany({
-      where: { 
+      where: {
         id: notificationId,
-        userId 
+        userId,
       },
     });
   }
 
   async getUnreadCount(userId: string): Promise<number> {
     return this.prisma.notification.count({
-      where: { 
+      where: {
         userId,
-        isRead: false 
+        isRead: false,
       },
     });
   }
 
   // Sistem bildirimleri için yardımcı metodlar
-  async createSystemNotification(userId: string, title: string, message: string, type: 'info' | 'success' | 'warning' | 'error' = 'info') {
+  async createSystemNotification(
+    userId: string,
+    title: string,
+    message: string,
+    type: 'info' | 'success' | 'warning' | 'error' = 'info',
+  ) {
     return this.createNotification({
       userId,
       title,
@@ -83,8 +88,13 @@ export class NotificationsService {
     });
   }
 
-  async createBulkNotification(userIds: string[], title: string, message: string, type: 'info' | 'success' | 'warning' | 'error' = 'info') {
-    const notifications = userIds.map(userId => ({
+  async createBulkNotification(
+    userIds: string[],
+    title: string,
+    message: string,
+    type: 'info' | 'success' | 'warning' | 'error' = 'info',
+  ) {
+    const notifications = userIds.map((userId) => ({
       userId,
       title,
       message,

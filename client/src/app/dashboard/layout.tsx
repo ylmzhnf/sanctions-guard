@@ -8,7 +8,7 @@ import Cookies from "js-cookie";
 import { auth, notifications } from "@/lib/api";
 import { useAuthStore } from "@/lib/store";
 import { cn, formatDate } from "@/lib/utils";
-import { isAdmin, isSuperAdmin } from "@/lib/auth-utils";
+import { isAdmin, isSuperAdmin, isDemoUser } from "@/lib/auth-utils";
 import {
   Search,
   ShieldAlert,
@@ -437,6 +437,13 @@ export default function DashboardLayout({
       </aside>
 
       <main className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden relative bg-background">
+        {isDemoUser(currentUser) && (
+          <div className="shrink-0 bg-amber-500 text-amber-950 text-xs sm:text-sm font-semibold text-center py-2 px-4 flex items-center justify-center gap-2">
+            <ShieldCheck className="w-4 h-4" />
+            Demo Mode — Read-only. Sample data only, nothing you do here is
+            saved.
+          </div>
+        )}
         <header
           className={cn(
             "sticky top-0 h-16 shrink-0 flex items-center justify-between px-4 sm:px-6 lg:px-8 z-30 border-b border-border bg-background/95 backdrop-blur-md",
@@ -591,9 +598,7 @@ export default function DashboardLayout({
         </header>
 
         <div className="flex-1 min-h-0 overflow-y-auto px-4 py-6 sm:px-6 lg:px-8 custom-scrollbar">
-          <div className="max-w-[1400px] mx-auto">
-            {children}
-          </div>
+          <div className="max-w-[1400px] mx-auto">{children}</div>
         </div>
       </main>
     </div>

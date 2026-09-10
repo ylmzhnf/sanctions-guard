@@ -1,4 +1,13 @@
-import { Controller, Get, Post, Body, Param, Delete, UseGuards, Req } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Param,
+  Delete,
+  UseGuards,
+  Req,
+} from '@nestjs/common';
 import { NotificationsService } from './notifications.service';
 import { JwtGuard } from '../auth/guard/jwt.guard';
 import type { Request } from 'express';
@@ -39,7 +48,7 @@ export class NotificationsController {
       userId,
       title: 'Test Notification',
       message: 'This is a test notification to verify the system is working.',
-      type: 'info'
+      type: 'info',
     });
   }
 }

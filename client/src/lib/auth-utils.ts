@@ -1,7 +1,7 @@
-import React from 'react';
-import { User } from './api';
+import React from "react";
+import { User } from "./api";
 
-export type UserRole = 'USER' | 'ADMIN' | 'SUPER_ADMIN' | 'API_SERVICE';
+export type UserRole = "USER" | "ADMIN" | "SUPER_ADMIN" | "API_SERVICE";
 
 export interface RolePermissions {
   canViewGlobalStats: boolean;
@@ -26,42 +26,49 @@ export function hasRole(user: User | null, role: UserRole): boolean {
  * Kullanıcının belirli rollerden herhangi birine sahip olup olmadığını kontrol eder
  */
 export function hasAnyRole(user: User | null, roles: UserRole[]): boolean {
-  return roles.some(role => user?.role === role);
+  return roles.some((role) => user?.role === role);
 }
 
 /**
  * Kullanıcının admin yetkisi olup olmadığını kontrol eder (ADMIN veya SUPER_ADMIN)
  */
 export function isAdmin(user: User | null): boolean {
-  return hasAnyRole(user, ['ADMIN', 'SUPER_ADMIN']);
+  return hasAnyRole(user, ["ADMIN", "SUPER_ADMIN"]);
 }
 
 /**
  * Kullanıcının süper admin yetkisi olup olmadığını kontrol eder
  */
 export function isSuperAdmin(user: User | null): boolean {
-  return hasRole(user, 'SUPER_ADMIN');
+  return hasRole(user, "SUPER_ADMIN");
 }
 
 /**
  * Kullanıcının organizasyon admin yetkisi olup olmadığını kontrol eder (sadece ADMIN)
  */
 export function isOrgAdmin(user: User | null): boolean {
-  return hasRole(user, 'ADMIN');
+  return hasRole(user, "ADMIN");
 }
 
 /**
  * Kullanıcının standart kullanıcı olup olmadığını kontrol eder
  */
 export function isUser(user: User | null): boolean {
-  return hasRole(user, 'USER');
+  return hasRole(user, "USER");
 }
 
 /**
  * Kullanıcının API servis hesabı olup olmadığını kontrol eder
  */
 export function isApiService(user: User | null): boolean {
-  return hasRole(user, 'API_SERVICE');
+  return hasRole(user, "API_SERVICE");
+}
+
+/**
+ * Kullanıcının read-only Demo Mode hesabı olup olmadığını kontrol eder
+ */
+export function isDemoUser(user: User | null): boolean {
+  return !!user?.isDemo;
 }
 
 /**
@@ -69,9 +76,9 @@ export function isApiService(user: User | null): boolean {
  */
 export function getUserPermissions(user: User | null): RolePermissions {
   const role = user?.role as UserRole;
-  
+
   switch (role) {
-    case 'SUPER_ADMIN':
+    case "SUPER_ADMIN":
       return {
         canViewGlobalStats: true,
         canManageAllOrganizations: true,
@@ -83,8 +90,8 @@ export function getUserPermissions(user: User | null): RolePermissions {
         canPerformScreening: true,
         canManageOwnProfile: true,
       };
-    
-    case 'ADMIN':
+
+    case "ADMIN":
       return {
         canViewGlobalStats: false,
         canManageAllOrganizations: false,
@@ -96,8 +103,8 @@ export function getUserPermissions(user: User | null): RolePermissions {
         canPerformScreening: true,
         canManageOwnProfile: true,
       };
-    
-    case 'USER':
+
+    case "USER":
       return {
         canViewGlobalStats: false,
         canManageAllOrganizations: false,
@@ -109,8 +116,8 @@ export function getUserPermissions(user: User | null): RolePermissions {
         canPerformScreening: true,
         canManageOwnProfile: true,
       };
-    
-    case 'API_SERVICE':
+
+    case "API_SERVICE":
       return {
         canViewGlobalStats: false,
         canManageAllOrganizations: false,
@@ -122,7 +129,7 @@ export function getUserPermissions(user: User | null): RolePermissions {
         canPerformScreening: true,
         canManageOwnProfile: false,
       };
-    
+
     default:
       return {
         canViewGlobalStats: false,
@@ -142,8 +149,8 @@ export function getUserPermissions(user: User | null): RolePermissions {
  * Kullanıcının belirli bir izne sahip olup olmadığını kontrol eder
  */
 export function hasPermission(
-  user: User | null, 
-  permission: keyof RolePermissions
+  user: User | null,
+  permission: keyof RolePermissions,
 ): boolean {
   const permissions = getUserPermissions(user);
   return permissions[permission];

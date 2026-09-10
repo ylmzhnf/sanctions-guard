@@ -6,6 +6,7 @@ export type JwtPayload = {
   email: string;
   role: Role;
   orgId: string;
+  isDemo: boolean;
 };
 
 export interface UserSession {
@@ -13,6 +14,7 @@ export interface UserSession {
   email: string;
   role: Role;
   orgId: string;
+  isDemo: boolean;
   organization?: {
     id: string;
     name: string;

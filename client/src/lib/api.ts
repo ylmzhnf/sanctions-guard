@@ -64,6 +64,7 @@ export interface User {
   org?: Organization;
   organization?: Organization;
   mustChangePassword?: boolean;
+  isDemo?: boolean;
 }
 
 export const auth = {
@@ -85,6 +86,11 @@ export const auth = {
   }) =>
     api
       .post("/auth/register", data)
+      .then((r) => r.data)
+      .catch(handleApiError),
+  demoLogin: async () =>
+    api
+      .post("/auth/demo-login")
       .then((r) => r.data)
       .catch(handleApiError),
 };

@@ -1,6 +1,15 @@
 import {
-  Controller, Get, Post, Patch, Delete, Body, Param, Query,
-  UseGuards, Request, ParseIntPipe
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Delete,
+  Body,
+  Param,
+  Query,
+  UseGuards,
+  Request,
+  ParseIntPipe,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { JwtGuard } from '../auth/guard/jwt.guard';
@@ -32,7 +41,7 @@ export class AdminController {
   @ApiOperation({ summary: 'Global stats for admin dashboard' })
   async getStats() {
     const overview = await this.adminService.getSystemOverview();
-    const raw = overview.stats as any;
+    const raw = overview.stats;
     return {
       totalOrganizations: Number(raw?.totalOrgs ?? 0),
       totalUsers: Number(raw?.totalUsers ?? 0),
@@ -86,7 +95,10 @@ export class AdminController {
   @Patch('settings')
   @Roles(Role.SUPER_ADMIN)
   @ApiOperation({ summary: 'Update global system settings' })
-  async updateSettings(@Body() settings: Record<string, string>, @Request() req: any) {
+  async updateSettings(
+    @Body() settings: Record<string, string>,
+    @Request() req: any,
+  ) {
     return this.adminService.updateGlobalSettings(settings, req.user.id);
   }
 }

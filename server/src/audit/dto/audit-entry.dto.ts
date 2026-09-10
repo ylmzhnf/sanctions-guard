@@ -9,7 +9,8 @@ import {
 
 export class AuditEntryDto {
   @ApiPropertyOptional({
-    description: 'İşlemi yapan kullanıcının UUID değeri. Sistem işlemlerinde boş olabilir.',
+    description:
+      'İşlemi yapan kullanıcının UUID değeri. Sistem işlemlerinde boş olabilir.',
     example: '550e8400-e29b-41d4-a716-446655440000',
   })
   @IsOptional()
@@ -40,7 +41,8 @@ export class AuditEntryDto {
   metadata: Record<string, any>;
 
   @ApiPropertyOptional({
-    description: 'Eğer işlem bir tarama (screening) sorgusuyla ilgiliyse o sorgunun ID değeri.',
+    description:
+      'Eğer işlem bir tarama (screening) sorgusuyla ilgiliyse o sorgunun ID değeri.',
   })
   @IsOptional()
   @IsUUID()

@@ -63,8 +63,13 @@ export class AdminService {
         skip: (page - 1) * limit,
         take: limit,
         select: {
-          id: true, email: true, name: true, role: true,
-          isActive: true, createdAt: true, orgId: true,
+          id: true,
+          email: true,
+          name: true,
+          role: true,
+          isActive: true,
+          createdAt: true,
+          orgId: true,
           organization: { select: { name: true } },
         },
         orderBy: { createdAt: 'desc' },
@@ -75,7 +80,10 @@ export class AdminService {
     return { items, total, pages: Math.ceil(total / limit) };
   }
 
-  async updateGlobalSettings(settings: Record<string, string>, adminId: string) {
+  async updateGlobalSettings(
+    settings: Record<string, string>,
+    adminId: string,
+  ) {
     const updates = Object.entries(settings).map(([key, value]) =>
       this.prisma.systemSetting.upsert({
         where: { key },

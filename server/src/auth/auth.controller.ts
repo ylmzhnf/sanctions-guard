@@ -7,7 +7,13 @@ import {
   UseGuards,
   Get,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiBearerAuth,
+  ApiResponse,
+} from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
@@ -20,9 +26,10 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('register')
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'Yeni kullanıcı ve organizasyon kaydı',
-    description: 'Yeni bir kullanıcı oluşturur ve kullanıcıya bağlı otomatik bir organizasyon kurar.' 
+    description:
+      'Yeni bir kullanıcı oluşturur ve kullanıcıya bağlı otomatik bir organizasyon kurar.',
   })
   @ApiResponse({ status: 201, description: 'Kullanıcı başarıyla oluşturuldu.' })
   @ApiResponse({ status: 409, description: 'E-posta adresi zaten kullanımda.' })
@@ -32,9 +39,10 @@ export class AuthController {
 
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'Kullanıcı girişi',
-    description: 'E-posta ve şifre ile giriş yaparak JWT access token almanızı sağlar.' 
+    description:
+      'E-posta ve şifre ile giriş yaparak JWT access token almanızı sağlar.',
   })
   @ApiResponse({ status: 200, description: 'Giriş başarılı.' })
   @ApiResponse({ status: 401, description: 'Hatalı kimlik bilgileri.' })
@@ -42,14 +50,31 @@ export class AuthController {
     return this.authService.login(dto);
   }
 
+  @Post('demo-login')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @ApiOperation({
+    summary: 'Enter read-only Demo Mode',
+    description:
+      'Issues a JWT for the pre-seeded, read-only demo account. No registration or password required.',
+  })
+  @ApiResponse({ status: 200, description: 'Demo session started.' })
+  async demoLogin() {
+    return this.authService.demoLogin();
+  }
+
   @Get('me')
   @ApiBearerAuth()
   @UseGuards(JwtGuard)
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'Profil bilgilerini getir',
-    description: 'Oturum açmış olan kullanıcının ve bağlı olduğu organizasyonun bilgilerini döndürür.' 
+    description:
+      'Oturum açmış olan kullanıcının ve bağlı olduğu organizasyonun bilgilerini döndürür.',
   })
-  @ApiResponse({ status: 200, description: 'Kullanıcı verileri başarıyla getirildi.' })
+  @ApiResponse({
+    status: 200,
+    description: 'Kullanıcı verileri başarıyla getirildi.',
+  })
   @ApiResponse({ status: 401, description: 'Yetkisiz erişim.' })
   async me(@GetUser('id') userId: string) {
     return this.authService.getMe(userId);

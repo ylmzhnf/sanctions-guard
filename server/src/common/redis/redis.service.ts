@@ -1,4 +1,9 @@
-import { Injectable, OnModuleDestroy, Logger, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  OnModuleDestroy,
+  Logger,
+  OnModuleInit,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
 
@@ -8,17 +13,20 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   private readonly client: Redis;
 
   constructor(private readonly configService: ConfigService) {
-    const redisUrl = this.configService.get<string>('REDIS_URL') || 'redis://localhost:6379';
+    const redisUrl =
+      this.configService.get<string>('REDIS_URL') || 'redis://localhost:6379';
 
     this.client = new Redis(redisUrl, {
       lazyConnect: true,
-      
+
       retryStrategy: (times) => {
         const delay = Math.min(times * 100, 3000);
-        this.logger.warn(`Redis connection lost. Retrying in ${delay}ms... (Attempt ${times})`);
+        this.logger.warn(
+          `Redis connection lost. Retrying in ${delay}ms... (Attempt ${times})`,
+        );
         return delay;
       },
-      
+
       maxRetriesPerRequest: 10,
     });
 
@@ -39,7 +47,6 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  
   getClient(): Redis {
     return this.client;
   }
@@ -53,11 +60,11 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  
   async set(key: string, value: any, ttl?: number): Promise<void> {
     try {
-      const data = typeof value === 'object' ? JSON.stringify(value) : String(value);
-      
+      const data =
+        typeof value === 'object' ? JSON.stringify(value) : String(value);
+
       if (ttl) {
         await this.client.set(key, data, 'EX', ttl);
       } else {
@@ -76,7 +83,6 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  
   async delByPattern(pattern: string): Promise<void> {
     const keys = await this.client.keys(pattern);
     if (keys.length > 0) {

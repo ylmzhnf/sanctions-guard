@@ -16,14 +16,7 @@ export enum EntityType {
   AIRCRAFT = 'AIRCRAFT',
 }
 
-/**
- * Screening Query DTO
- * Secure, validated input for single entity screening
- * - Minimal 2 chars, max 100 chars (prevents DoS)
- * - Whitespace normalized
- * - Entity type constrained to enum
- * - Optional country code validation
- */
+
 export class ScreeningQueryDto {
   @ApiProperty({
     description: 'The name of the entity or individual to screen',
@@ -71,12 +64,7 @@ export class ScreeningQueryDto {
   country?: string;
 }
 
-/**
- * Bulk Screening DTO
- * - Maximum 100 names per batch to prevent abuse
- * - Each name validated individually
- * - Designed for queue-based async processing
- */
+
 export class BulkScreeningDto {
   @ApiProperty({
     description: 'Array of entity names to screen in bulk',

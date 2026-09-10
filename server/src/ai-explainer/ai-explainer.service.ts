@@ -18,8 +18,6 @@ export interface ExplainInput {
   provider: AiProvider;
 }
 
-
-
 const SYSTEM_PROMPT = `You are a compliance analyst specializing in international sanctions.
 Your job is to write clear, professional risk explanations for sanctions screening matches.
 You MUST respond ONLY with a valid JSON object in the following format:

@@ -16,6 +16,10 @@ import { RiskLevel } from '@prisma/client';
 import { ScreenQueryDto, BulkScreenDto } from './dto/query-bulk-screening.dto';
 import { JwtGuard } from '../auth/guard/jwt.guard';
 import { GetUser } from '../auth/decorator/get-user.decorator';
+import {
+  AllowDemoWrite,
+  DemoRateLimit,
+} from '../auth/decorator/allow-demo-write.decorator';
 import { AuditInterceptor } from '../audit/interceptors/audit.interceptor';
 import { ScreeningService } from './screening.service';
 import { ReportsService } from './reports.service';
@@ -36,11 +40,16 @@ export class ScreeningController {
   ) {}
 
   @Post('screen')
-  @UseInterceptors(AuditInterceptor) 
-  @ApiOperation({ summary: 'Tekil bir kişi veya kurumu yaptırım listelerinde tarar' })
-  @ApiBody({ schema: { example: { queryName: 'Viktor Bout', entityType: 'INDIVIDUAL' } } })
+  @UseInterceptors(AuditInterceptor)
+  @AllowDemoWrite()
+  @DemoRateLimit(10, 3600)
+  @ApiOperation({
+    summary: 'Tekil bir kişi veya kurumu yaptırım listelerinde tarar',
+  })
+  @ApiBody({
+    schema: { example: { queryName: 'Viktor Bout', entityType: 'INDIVIDUAL' } },
+  })
   async screen(@Body() dto: ScreenQueryDto, @GetUser() user: RequestUser) {
-    
     const result = await this.screeningService.screen(dto, user.id, user.orgId);
 
     if (!result.matches || result.matches.length === 0) {
@@ -72,7 +81,9 @@ export class ScreeningController {
   }
 
   @Post('bulk')
-  @ApiOperation({ summary: 'Toplu tarama işlemini arka plan kuyruğuna (BullMQ) ekler' })
+  @ApiOperation({
+    summary: 'Toplu tarama işlemini arka plan kuyruğuna (BullMQ) ekler',
+  })
   async bulkScreen(@Body() dto: BulkScreenDto, @GetUser() user: RequestUser) {
     return this.screeningService.bulkScreen(dto, user.id, user.orgId);
   }
