@@ -12,6 +12,7 @@ import { PrismaService } from '../common/prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { DemoService } from '../demo/demo.service';
 
 @Injectable()
 export class AuthService {
@@ -21,6 +22,7 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
     private readonly audit: AuditService,
+    private readonly demoService: DemoService,
   ) {}
 
   async register(dto: RegisterDto) {
@@ -142,41 +144,24 @@ export class AuthService {
     return this.formatUserResponse(user, user.organization!);
   }
 
-  // Issues a normal JWT for the single, pre-seeded read-only demo account.
-  // No password is required and no new user/org is ever created here.
   async demoLogin() {
-    const demoEmail =
-      process.env.DEMO_USER_EMAIL || 'demo@sanctions-guard.local';
-
-    const user = await this.prisma.user.findUnique({
-      where: { email: demoEmail },
-      include: { organization: true },
-    });
-
-    if (!user || !user.isActive || !user.isDemo || !user.organization) {
-      this.logger.error(
-        'Demo login requested but no valid demo user is seeded.',
-      );
-      throw new NotFoundException(
-        'Demo mode is currently unavailable. Please try again later.',
-      );
-    }
+    const { user, org } = await this.demoService.provisionSession();
 
     await this.audit.log({
       action: 'DEMO_LOGIN',
       actorId: user.id,
-      orgId: user.organization.id,
-      metadata: { method: 'DEMO_LOGIN' },
+      orgId: org.id,
+      metadata: { method: 'DEMO_LOGIN', isolatedSession: true },
     });
 
     const token = this.signToken(
       user.id,
       user.email,
-      user.organization.id,
+      org.id,
       user.role,
       user.isDemo,
     );
-    return { token, user: this.formatUserResponse(user, user.organization) };
+    return { token, user: this.formatUserResponse(user, org) };
   }
 
   private signToken(

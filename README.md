@@ -28,9 +28,9 @@ The live demo uses the same core screening pipeline as the normal application an
 - Fuzzy name matching
 - OSINT-assisted investigation
 - AI-assisted risk analysis
-- Persistent audit history
+- Persistent audit history (within your own isolated session)
 
-The demo runs in a dedicated, isolated organization with restricted permissions. Sensitive administrative operations and credential management are disabled for demo users.
+Every visitor gets a fresh, isolated demo workspace, so no one else's screenings or audit history are ever visible to you (and yours are never visible to others). Sensitive administrative operations and credential management are disabled for demo users.
 
 ## Core Technical Stack
 
@@ -99,13 +99,15 @@ The demo runs in a dedicated, isolated organization with restricted permissions.
 
 The live demo provides a restricted environment for evaluating the screening workflow without requiring an account or API credentials.
 
+Every visitor gets a **brand-new, isolated demo workspace.** Each entry to the demo provisions a fresh organization and user, so your screenings, AI explanations, and audit trail are private to your own session — you will never see (or share) another visitor's search history. Stale demo workspaces older than `DEMO_SESSION_TTL_HOURS` (default: 24 hours) are deleted automatically by an hourly cleanup job.
+
 The demo supports:
 
 - Real sanctions screening
 - Fuzzy name matching
 - OSINT-assisted investigation
 - AI-assisted risk analysis
-- Persistent audit history
+- Persistent audit history (scoped to your isolated session)
 
 Demo users cannot:
 
@@ -186,6 +188,9 @@ SERPER_API_KEY="..."
 
 REDIS_URL="redis://localhost:6379"
 
+# How long an isolated demo workspace lives before the hourly cleanup deletes it.
+DEMO_SESSION_TTL_HOURS=24
+
 FRONTEND_URL="http://localhost:3000"
 ```
 
@@ -262,7 +267,7 @@ Validated areas include:
 
 The demo environment is intentionally restricted:
 
-- Demo users are assigned to a dedicated organization
+- Demo users are assigned to a fresh, isolated organization per session
 - Demo users cannot manage credentials or organization members
 - Demo users cannot modify organization settings
 - Demo users cannot access another organization's data

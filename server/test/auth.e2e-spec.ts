@@ -67,4 +67,31 @@ describe('Auth (e2e)', () => {
 
     await request(app.getHttpServer()).get('/api/v1/auth/me').expect(401);
   });
+
+  it('demo-login provisions a fresh, isolated workspace every time', async () => {
+    const first = await request(app.getHttpServer())
+      .post('/api/v1/auth/demo-login')
+      .expect(200);
+    const second = await request(app.getHttpServer())
+      .post('/api/v1/auth/demo-login')
+      .expect(200);
+
+    expect(first.body.user.isDemo).toBe(true);
+    expect(second.body.user.isDemo).toBe(true);
+
+    // Every visitor gets their OWN user and organization.
+    expect(first.body.user.id).not.toBe(second.body.user.id);
+    expect(first.body.user.organization.id).not.toBe(
+      second.body.user.organization.id,
+    );
+
+    // The fresh workspace starts with no screening history.
+    const historyRes = await request(app.getHttpServer())
+      .get('/api/v1/screening/history')
+      .set('Authorization', `Bearer ${first.body.token}`)
+      .expect(200);
+
+    expect(historyRes.body.total).toBe(0);
+    expect(historyRes.body.queries).toEqual([]);
+  });
 });

@@ -56,7 +56,9 @@ export class AuthController {
   @ApiOperation({
     summary: 'Enter read-only Demo Mode',
     description:
-      'Issues a JWT for the pre-seeded, read-only demo account. No registration or password required.',
+      'Provisions a fresh, isolated demo workspace and issues a JWT for it. ' +
+      'Every visitor gets their own clean workspace — no shared history and ' +
+      'no registration or password required.',
   })
   @ApiResponse({ status: 200, description: 'Demo session started.' })
   async demoLogin() {

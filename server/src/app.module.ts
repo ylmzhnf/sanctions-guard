@@ -17,6 +17,7 @@ import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { HealthController } from './health.controller';
 import { DemoGuard } from './auth/guard/demo.guard';
+import { DemoModule } from './demo/demo.module';
 import { RedisModule } from './common/redis/redis.module';
 
 @Module({
@@ -50,6 +51,7 @@ import { RedisModule } from './common/redis/redis.module';
     AuthModule,
     UsersModule,
     AuditModule,
+    DemoModule,
     ScheduleModule.forRoot(),
     SanctionsSyncModule,
     AdminModule,
