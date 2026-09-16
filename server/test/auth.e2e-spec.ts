@@ -79,13 +79,11 @@ describe('Auth (e2e)', () => {
     expect(first.body.user.isDemo).toBe(true);
     expect(second.body.user.isDemo).toBe(true);
 
-    // Every visitor gets their OWN user and organization.
     expect(first.body.user.id).not.toBe(second.body.user.id);
     expect(first.body.user.organization.id).not.toBe(
       second.body.user.organization.id,
     );
 
-    // The fresh workspace starts with no screening history.
     const historyRes = await request(app.getHttpServer())
       .get('/api/v1/screening/history')
       .set('Authorization', `Bearer ${first.body.token}`)

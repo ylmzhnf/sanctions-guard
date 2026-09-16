@@ -174,9 +174,6 @@ export class ScreeningService {
       SIMILARITY_THRESHOLDS.LOW,
     );
 
-    // Demo workspaces always fall back to the server-side (environment)
-    // credentials so AI + OSINT keep working even if the session was
-    // provisioned before the keys were configured in the environment.
     let aiProvider = org.settings?.aiProvider;
     let aiApiKey = org.settings?.aiApiKey;
     let osintApiKey = org.settings?.osintApiKey;
