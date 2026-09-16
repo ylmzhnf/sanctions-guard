@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Queue } from 'bullmq';
 import { InjectQueue } from '@nestjs/bullmq';
 import { randomUUID } from 'crypto';
-import { Prisma, RiskLevel, ScreeningStatus, ListSource } from '@prisma/client';
+import { Prisma, RiskLevel, ScreeningStatus, ListSource, AiProvider } from '@prisma/client';
 
 import { PrismaService } from '../common/prisma/prisma.service';
 import { RedisService } from '../common/redis/redis.service';
@@ -174,6 +174,28 @@ export class ScreeningService {
       SIMILARITY_THRESHOLDS.LOW,
     );
 
+    // Demo workspaces always fall back to the server-side (environment)
+    // credentials so AI + OSINT keep working even if the session was
+    // provisioned before the keys were configured in the environment.
+    let aiProvider = org.settings?.aiProvider;
+    let aiApiKey = org.settings?.aiApiKey;
+    let osintApiKey = org.settings?.osintApiKey;
+
+    if (org.isDemo) {
+      aiProvider =
+        aiProvider ||
+        (process.env.DEMO_AI_PROVIDER === 'ANTHROPIC'
+          ? AiProvider.ANTHROPIC
+          : AiProvider.OPENAI);
+      aiApiKey =
+        aiApiKey ||
+        (aiProvider === AiProvider.ANTHROPIC
+          ? process.env.ANTHROPIC_API_KEY
+          : process.env.OPENAI_API_KEY) ||
+        null;
+      osintApiKey = osintApiKey || process.env.SERPER_API_KEY || null;
+    }
+
     const normalizedQuery = this.normalize(queryName).replace(/\s+/g, '_');
 
     const cacheKey = `screen:v4:${orgId}:${normalizedQuery}:${entityType || 'ALL'}:${orgThreshold}`;
@@ -196,7 +218,7 @@ export class ScreeningService {
           queryName,
           highestScore / 100,
           orgThreshold / 100,
-          org.settings?.osintApiKey || undefined,
+          osintApiKey || undefined,
         );
       } catch (error) {
         this.logger.warn(`OSINT fetch failed for ${queryName}`);
@@ -214,8 +236,8 @@ export class ScreeningService {
             programs: m.programs,
           })),
           riskLevel,
-          userApiKey: org.settings?.aiApiKey || '',
-          provider: org.settings?.aiProvider || 'OPENAI',
+          userApiKey: aiApiKey || '',
+          provider: aiProvider || 'OPENAI',
         });
       } catch (error: any) {
         this.logger.error(`AI Explanation failed: ${error.message}`);

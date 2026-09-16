@@ -188,6 +188,94 @@ describe('ScreeningService', () => {
         }),
       );
     });
+
+    it('should fall back to environment keys for demo workspaces', async () => {
+      process.env.OPENAI_API_KEY = 'env-openai-key';
+      process.env.SERPER_API_KEY = 'env-serper-key';
+      try {
+        mockPrisma.organization.findUniqueOrThrow.mockResolvedValue({
+          id: 'demo-org-1',
+          name: 'Demo Workspace',
+          isDemo: true,
+          settings: {
+            aiProvider: 'OPENAI',
+            aiApiKey: null,
+            osintApiKey: null,
+          },
+        });
+        mockPrisma.$queryRaw.mockResolvedValue([MOCK_CANDIDATES[0]]);
+        mockPrisma.screeningQuery.create.mockResolvedValue({
+          id: 'query-demo',
+        });
+        mockAi.explain.mockResolvedValue('Mock AI Analysis');
+        mockOsint.fetchResults.mockResolvedValue({ news: [] });
+
+        await service.screen(
+          { queryName: 'Roman Abramovich' },
+          'u-1',
+          'demo-org-1',
+        );
+
+        expect(mockOsint.fetchResults).toHaveBeenCalledWith(
+          expect.any(String),
+          expect.any(Number),
+          expect.any(Number),
+          'env-serper-key',
+        );
+        expect(mockAi.explain).toHaveBeenCalledWith(
+          expect.objectContaining({
+            userApiKey: 'env-openai-key',
+            provider: 'OPENAI',
+          }),
+        );
+      } finally {
+        delete process.env.OPENAI_API_KEY;
+        delete process.env.SERPER_API_KEY;
+      }
+    });
+
+    it('should prefer DB-stored keys over environment for demo workspaces', async () => {
+      process.env.OPENAI_API_KEY = 'env-key-should-not-be-used';
+      try {
+        mockPrisma.organization.findUniqueOrThrow.mockResolvedValue({
+          id: 'demo-org-2',
+          name: 'Demo Workspace',
+          isDemo: true,
+          settings: {
+            aiProvider: 'ANTHROPIC',
+            aiApiKey: 'db-anthropic-key',
+            osintApiKey: 'db-serper-key',
+          },
+        });
+        mockPrisma.$queryRaw.mockResolvedValue([MOCK_CANDIDATES[0]]);
+        mockPrisma.screeningQuery.create.mockResolvedValue({
+          id: 'query-demo-2',
+        });
+        mockAi.explain.mockResolvedValue('Mock AI Analysis');
+        mockOsint.fetchResults.mockResolvedValue({ news: [] });
+
+        await service.screen(
+          { queryName: 'Roman Abramovich' },
+          'u-1',
+          'demo-org-2',
+        );
+
+        expect(mockOsint.fetchResults).toHaveBeenCalledWith(
+          expect.any(String),
+          expect.any(Number),
+          expect.any(Number),
+          'db-serper-key',
+        );
+        expect(mockAi.explain).toHaveBeenCalledWith(
+          expect.objectContaining({
+            userApiKey: 'db-anthropic-key',
+            provider: 'ANTHROPIC',
+          }),
+        );
+      } finally {
+        delete process.env.OPENAI_API_KEY;
+      }
+    });
   });
 
   describe('bulkScreen (Queue Integration)', () => {

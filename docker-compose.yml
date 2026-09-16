@@ -28,6 +28,9 @@ services:
       JWT_SECRET: ${JWT_SECRET:-replace-with-32-plus-char-secret}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      SERPER_API_KEY: ${SERPER_API_KEY:-}
+      DEMO_AI_PROVIDER: ${DEMO_AI_PROVIDER:-OPENAI}
+      DEMO_SESSION_TTL_HOURS: ${DEMO_SESSION_TTL_HOURS:-24}
     depends_on:
       - db
       - redis

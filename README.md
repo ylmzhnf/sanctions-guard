@@ -196,6 +196,8 @@ FRONTEND_URL="http://localhost:3000"
 
 For production, configure these values in Railway Variables instead of committing `.env` files.
 
+To keep the **live demo** AI + OSINT features working, make sure the API service (Railway) also has `OPENAI_API_KEY` (or `ANTHROPIC_API_KEY` together with `DEMO_AI_PROVIDER=ANTHROPIC`) and `SERPER_API_KEY` configured. These keys are read server-side, and demo screenings automatically fall back to the environment keys even if a session was provisioned before they were set.
+
 Use the Supabase Session Pooler URL for `DATABASE_URL`, the Upstash Redis URL for `REDIS_URL`, and the deployed Vercel URL for `FRONTEND_URL`.
 
 The frontend requires:
