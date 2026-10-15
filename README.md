@@ -183,6 +183,7 @@ JWT_SECRET="your-secret"
 OPENAI_API_KEY="..."
 # or
 ANTHROPIC_API_KEY="..."
+DEMO_AI_PROVIDER="OPENAI"
 
 SERPER_API_KEY="..."
 
@@ -193,6 +194,11 @@ DEMO_SESSION_TTL_HOURS=24
 
 FRONTEND_URL="http://localhost:3000"
 ```
+
+When using Docker Compose, the API container reads these keys from `server/.env`.
+They stay server-side; demo users do not need to enter or receive API keys.
+AI explanations are generated for screening results with potential sanctions
+matches; clear results do not require an AI explanation.
 
 For production, configure these values in Railway Variables instead of committing `.env` files.
 
@@ -335,6 +341,7 @@ The example above is illustrative. Actual screening results depend on the querie
 | `JWT_SECRET` | ✓ | JWT signing secret |
 | `OPENAI_API_KEY` | Optional | OpenAI API key |
 | `ANTHROPIC_API_KEY` | Optional | Anthropic API key |
+| `DEMO_AI_PROVIDER` | Optional | `OPENAI` (default) or `ANTHROPIC` for demo AI explanations |
 | `SERPER_API_KEY` | Optional | Serper API key for OSINT search |
 | `FRONTEND_URL` | ✓ | Allowed frontend origin for CORS |
 | `NEXT_PUBLIC_API_URL` | ✓ | Backend API URL used by the frontend |
