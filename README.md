@@ -189,7 +189,6 @@ SERPER_API_KEY="..."
 
 REDIS_URL="redis://localhost:6379"
 
-# How long an isolated demo workspace lives before the hourly cleanup deletes it.
 DEMO_SESSION_TTL_HOURS=24
 
 FRONTEND_URL="http://localhost:3000"

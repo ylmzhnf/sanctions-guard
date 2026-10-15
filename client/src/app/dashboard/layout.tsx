@@ -113,7 +113,7 @@ export default function DashboardLayout({
     if (!isMounted || !isHydrated) return;
 
     if (!storeToken) {
-      router.replace("/auth/login");
+      router.replace("/");
       return;
     }
 
@@ -124,7 +124,7 @@ export default function DashboardLayout({
       (isUserError || isUserFetched);
 
     if (shouldRedirectToLogin) {
-      router.replace("/auth/login");
+      router.replace("/");
     }
   }, [
     storeToken,
@@ -426,7 +426,7 @@ export default function DashboardLayout({
           <button
             onClick={() => {
               logout();
-              router.push("/auth/login");
+              router.push("/");
             }}
             className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm font-medium text-muted-foreground hover:text-destructive hover:bg-red-50 rounded-md transition-colors"
           >

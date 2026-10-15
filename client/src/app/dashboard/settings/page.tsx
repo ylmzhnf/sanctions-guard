@@ -220,7 +220,7 @@ export default function SettingsPage() {
             hasKey={config?.hasAiKey}
           />
           <KeyInput
-            label="SerpApi — OSINT Engine"
+            label="SerperApi — OSINT Engine"
             description="Enables web intelligence gathering from news and social sources."
             icon={<Search className="w-4 h-4 text-blue-500" />}
             value={osintKey}

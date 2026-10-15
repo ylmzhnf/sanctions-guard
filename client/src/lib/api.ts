@@ -23,8 +23,8 @@ api.interceptors.response.use(
     if (error.response?.status === 401 && typeof window !== "undefined") {
       useAuthStore.getState().logout();
       const currentPath = window.location.pathname;
-      if (!currentPath.startsWith("/auth/")) {
-        window.location.assign("/auth/login");
+      if (!currentPath.startsWith("/auth/") && currentPath !== "/") {
+        window.location.assign("/");
       }
     }
     return Promise.reject(error);
